@@ -108,6 +108,9 @@ test("native sources call DXGI, SendInput, and ProcessInput on a synchronous H.2
   assert.match(encoder, /ProcessInput\(/);
   assert.match(encoder, /MFVideoFormat_H264/);
   assert.match(encoder, /MFT_ENUM_FLAG_SYNCMFT/);
+  assert.match(encoder, /icodecapi\.h/);
+  assert.match(encoder, /MF_MT_MPEG2_PROFILE/);
+  assert.match(encoder, /#ifdef CODECAPI_AVEncH264VProfile/);
   assert.match(gyp, /h264_encoder\.cc/);
   assert.match(gyp, /wmcodecdspuuid\.lib/);
   assert.match(injection, /dispatchWin32Inputs/);
