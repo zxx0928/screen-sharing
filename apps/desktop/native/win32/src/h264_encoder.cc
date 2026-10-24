@@ -12,6 +12,8 @@
 #include <mfidl.h>
 #include <mftransform.h>
 #include <mferror.h>
+// SDK 10.0.26100 declares ICodecAPI here. strmif.h no longer exposes it to desktop includes.
+#include <icodecapi.h>
 #include <codecapi.h>
 #include <wrl/client.h>
 
@@ -280,7 +282,11 @@ bool H264Encoder::Open(int width, int height, int bitrate, int fps, int gop, std
   SetUInt32(codec.Get(), CODECAPI_AVEncCommonRateControlMode, eAVEncCommonRateControlMode_CBR);
   SetUInt32(codec.Get(), CODECAPI_AVEncCommonMeanBitRate, static_cast<UINT32>(bitrate));
   SetUInt32(codec.Get(), CODECAPI_AVEncMPVGOPSize, static_cast<UINT32>(gop));
+  // The output media type already carries MF_MT_MPEG2_PROFILE. This GUID is not
+  // in every Windows SDK's codecapi.h, so only set it when the header defines it.
+#ifdef CODECAPI_AVEncH264VProfile
   SetUInt32(codec.Get(), CODECAPI_AVEncH264VProfile, eAVEncH264VProfile_Base);
+#endif
   SetBool(codec.Get(), CODECAPI_AVLowLatencyMode, true);
 
   transform->ProcessMessage(MFT_MESSAGE_NOTIFY_BEGIN_STREAMING, 0);
