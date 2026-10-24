@@ -13,11 +13,19 @@ import { bindControllerInput, bindHostInputChannel, INPUT_CHANNEL_LABEL } from "
  * Thin WebRTC session. The host offers a screen track and creates the input
  * DataChannel. The controller answers and sends input back on that channel.
  *
- * TODO(turn): add a self-hosted coturn server when peers are not on the same
- * network. Do not commit long-term TURN credentials. Same-machine and most
- * LAN sessions work with host candidates plus the public STUN server below.
+ * ICE servers come from the desktop environment (`readIceConfig`). With no
+ * TURN_URLS this is host candidates plus STUN, which covers one machine and
+ * most LANs. Across NATs, point TURN_URLS at coturn. Credentials stay in the
+ * environment and are never written into this file.
  */
-const ICE_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
+const DEFAULT_ICE_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
+
+export type RtcTransportConfig = {
+  /** Omit to use the public STUN default. An empty array means "no ICE servers". */
+  iceServers?: RTCIceServer[];
+  /** `relay` forces TURN. Anything else gathers every candidate type. */
+  iceTransportPolicy?: RTCIceTransportPolicy;
+};
 
 export type PeerSession = {
   acceptSignal(payload: RtcSignal): Promise<void>;
@@ -30,7 +38,7 @@ export type HostPeerSession = PeerSession & {
   setRemoteControl(enabled: boolean): void;
 };
 
-type SessionOptions = {
+type SessionOptions = RtcTransportConfig & {
   sendSignal: (payload: RtcSignal) => void;
   onConnectionState?: (state: RTCPeerConnectionState) => void;
   onCaptureSource?: (source: CaptureSource) => void;
@@ -38,7 +46,7 @@ type SessionOptions = {
 };
 
 export function startHostSession(options: SessionOptions): HostPeerSession {
-  const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+  const pc = openPeerConnection(options);
   let stopped = false;
   let offered = false;
   let track: MediaStreamTrack | null = null;
@@ -171,7 +179,7 @@ export function startControllerSession(
     localKeyboard?: () => boolean;
   },
 ): PeerSession {
-  const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+  const pc = openPeerConnection(options);
   let inputDispose: (() => void) | null = null;
   let remoteStream: MediaStream | null = null;
   let sharing = DEFAULT_SHARING_ENABLED;
@@ -219,6 +227,8 @@ export function startControllerSession(
       },
       applyPolicy,
     );
+    // A clean pc.close() on the host drops this channel before ICE is declared failed.
+    event.channel.addEventListener("close", () => options.onConnectionState?.("closed"));
   };
 
   return {
@@ -270,8 +280,81 @@ function attachIce(pc: RTCPeerConnection, sendSignal: (payload: RtcSignal) => vo
   };
 }
 
+const loggedPairs = new WeakSet<RTCPeerConnection>();
+
+function openPeerConnection(config: RtcTransportConfig): RTCPeerConnection {
+  return new RTCPeerConnection({
+    iceServers: config.iceServers ?? DEFAULT_ICE_SERVERS,
+    iceTransportPolicy: config.iceTransportPolicy === "relay" ? "relay" : "all",
+  });
+}
+
 function watchState(pc: RTCPeerConnection, onConnectionState?: (state: RTCPeerConnectionState) => void): void {
-  pc.onconnectionstatechange = () => onConnectionState?.(pc.connectionState);
+  const emit = (state: RTCPeerConnectionState): void => onConnectionState?.(state);
+  pc.onconnectionstatechange = () => emit(pc.connectionState);
+  pc.oniceconnectionstatechange = () => {
+    const ice = pc.iceConnectionState;
+    if (ice === "connected" || ice === "completed") {
+      emit("connected");
+      void logSelectedCandidate(pc);
+      return;
+    }
+    if (ice === "disconnected") emit("disconnected");
+    if (ice === "failed") emit("failed");
+    if (ice === "closed") emit("closed");
+  };
+}
+
+async function logSelectedCandidate(pc: RTCPeerConnection): Promise<void> {
+  if (loggedPairs.has(pc)) return;
+  loggedPairs.add(pc);
+  try {
+    const stats = await pc.getStats();
+    let pair: RTCStats | undefined;
+    stats.forEach((report) => {
+      if (pair || report.type !== "transport") return;
+      const selectedId = statField(report, "selectedCandidatePairId");
+      if (selectedId) pair = findStat(stats, selectedId);
+    });
+    if (!pair) {
+      stats.forEach((report) => {
+        if (pair || report.type !== "candidate-pair") return;
+        if (statBoolean(report, "selected") || statBoolean(report, "nominated")) pair = report;
+      });
+    }
+    if (!pair) {
+      loggedPairs.delete(pc);
+      return;
+    }
+    const local = findStat(stats, statField(pair, "localCandidateId") ?? "");
+    const remote = findStat(stats, statField(pair, "remoteCandidateId") ?? "");
+    const localType = statField(local, "candidateType") ?? "unknown";
+    const remoteType = statField(remote, "candidateType") ?? "unknown";
+    const protocol = statField(local, "protocol") ?? statField(remote, "protocol") ?? "unknown";
+    console.log(`[ice] selected local=${localType} remote=${remoteType} protocol=${protocol}`);
+  } catch (error) {
+    loggedPairs.delete(pc);
+    console.warn("[ice] could not read the selected candidate", error);
+  }
+}
+
+function findStat(stats: RTCStatsReport, id: string): RTCStats | undefined {
+  if (!id) return undefined;
+  let found: RTCStats | undefined;
+  stats.forEach((report) => {
+    if (report.id === id) found = report;
+  });
+  return found;
+}
+
+function statField(report: RTCStats | undefined, key: string): string | undefined {
+  if (!report) return undefined;
+  const value = (report as unknown as Record<string, unknown>)[key];
+  return typeof value === "string" ? value : undefined;
+}
+
+function statBoolean(report: RTCStats, key: string): boolean {
+  return (report as unknown as Record<string, unknown>)[key] === true;
 }
 
 function createRemoteSignalHandler(

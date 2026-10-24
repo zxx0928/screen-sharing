@@ -15,7 +15,7 @@ The same Electron client plays both roles. On Windows the main process captures 
 - 自建轻量 WebSocket 信令，用设备码做房间
 - npm workspaces，TypeScript
 
-No secrets belong in this repo. Signaling binds to `127.0.0.1` unless you change it.
+No secrets belong in this repo. Signaling binds to `127.0.0.1` unless you change it. TURN usernames and passwords are environment variables; see [docs/network.md](docs/network.md).
 
 ## 目录 / Folder map
 
@@ -75,10 +75,11 @@ $env:SIGNALING_PORT="8787"; npm run dev:signaling
 $env:SIGNALING_URL="ws://127.0.0.1:8787"; npm run dev:desktop
 ```
 
-让局域网里的另一台机器连接时，把信令绑到 `0.0.0.0`，并把 `SIGNALING_URL` 设成这台机器的地址。默认只监听本机。
+让另一台机器连接时，把信令绑到 `0.0.0.0`，客户端的 `SIGNALING_URL` 写成这台机器**能被访问到的地址**（局域网 IP 或公网 IP），不要写 `0.0.0.0`。默认只监听本机。跨 NAT 还要配 TURN。步骤、coturn 和强制走中继的验法在 [docs/network.md](docs/network.md)。
 
 ```bash
 SIGNALING_HOST=0.0.0.0 SIGNALING_PORT=8787 npm run dev:signaling
+SIGNALING_URL=ws://192.168.1.20:8787 npm run dev:desktop
 ```
 
 检查与测试：
@@ -132,6 +133,7 @@ Linux 上没有 `.node` 插件，主进程会打一行 `[input] win32 addon not 
 | `session-state.sharing` | 被控端是否正在把画面送出去 | boolean | 只走 DataChannel，被控端发给控制端。`false` 时视频轨换成空轨，不发 `leave`，房间还在。默认 `true` |
 | `session-state.control` | 被控端是否允许把键鼠注入本机 | boolean | 只走 DataChannel。`false` 时被控端主进程在 `SendInput` 之前丢掉事件。默认 `false`，只有被控端勾选后才变成 `true` |
 | `session-sync` | 控制端向被控端要一份当前共享/控制状态 | 无其它字段 | DataChannel 一打开就发，避免第一条 `session-state` 比监听器更早到达 |
+| `end-session` | 被控端挂断这一次协助，设备码房间还在 | 无其它字段 | 被控端发给信令。信令立刻摘掉控制端并发 `peer-left`（`role: host`）。控制端不能发。和 `leave` 不同：`leave` 若来自被控端会把房间删掉 |
 
 一个房间最多一个被控端、一个控制端。第三个控制端会收到 `room-full`。
 
@@ -146,13 +148,13 @@ Linux 上没有 `.node` 插件，主进程会打一行 `[input] win32 addon not 
 - Windows `SendInput`：扫描码键盘、虚拟屏幕绝对坐标的鼠标、滚轮方向已按 DOM 约定转换。远程控制默认关闭，被控端允许后才注入
 - 被控端可单独开始/停止共享。停止后控制端不再收画面，房间和连接不断开
 - 其它平台仍可用 `getDisplayMedia` 或占位画面把会话跑起来
+- TURN：用环境变量把 coturn 填进 `RTCPeerConnection` 的 `iceServers`。不配则仍是 STUN，同一台机器和大多数局域网够用。见 [docs/network.md](docs/network.md)
 
 现在没有：
 
 - 把 H.264 留在 GPU 上，并用硬件异步 MFT 直接送进 RTP。现在仍会解码到 canvas，由 Chromium 再编码一次。下一步写在 [docs/windows.md](docs/windows.md)
 - macOS
-- TURN / coturn（跨网穿透）
-- 账号、设备码防爆破、密码哈希、房间持久化
+- 账号、设备码防爆破、密码哈希、房间持久化、信令登录口令
 - 剪贴板、文件传输、多显示器切换策略（坐标映射已按多屏虚拟桌面计算，采集默认主显示器）
 - 多人会议
 
@@ -165,7 +167,7 @@ Linux 上没有 `.node` 插件，主进程会打一行 `[input] win32 addon not 
 | DXGI 采集 | `apps/desktop/native/win32`、`src/main/dxgi-host.ts` | 已接上。渲染进程开了沙箱，不能加载 `.node` |
 | `SendInput` | `src/main/input-injection.ts`、`native/win32/src/send_input.cc` | 已接上。DataChannel 的 `InputEvent` 经 preload 进主进程 |
 | H.264 | `native/win32/src/h264_encoder.cc`、`src/renderer/h264-preview.ts` | 同步 MFT 已接上。下一步是 GPU NV12 和不再二次编码的 RTP |
-| `TODO(turn)` | `apps/desktop/src/renderer/peer-session.ts` | 自建 coturn。不要把长期凭证提交进仓库 |
+| ICE / TURN | `apps/desktop/src/shared/ice-config.ts`、`peer-session.ts` | 已接上。`TURN_URLS` / `TURN_USERNAME` / `TURN_CREDENTIAL`，说明在 [docs/network.md](docs/network.md)。不要把长期凭证提交进仓库 |
 | `TODO(macos)` | `capture-plan.ts`、`input-injection.ts` | 以后的 ScreenCaptureKit 和 CGEvent |
 
 ```mermaid
@@ -175,7 +177,7 @@ flowchart LR
   signaling[信令 WebSocket]
   controller -->|设备码加入| signaling
   host -->|创建房间| signaling
-  host -->|WebRTC 屏幕轨| controller
+  host -->|WebRTC 屏幕轨，直连或经 TURN| controller
   controller -->|DataChannel 键鼠| host
   host --> dxgi[DXGI Desktop Duplication]
   host --> inject[SendInput]

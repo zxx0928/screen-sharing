@@ -6,6 +6,11 @@ const host = process.env.SIGNALING_HOST ?? "127.0.0.1";
 const handle = await startSignalingServer(port, host);
 console.log(`[signaling] listening on ws://${host}:${handle.port}`);
 console.log("[signaling] rooms are in-memory and 1:1 (one host, one controller)");
+if (host === "0.0.0.0" || host === "::") {
+  console.log(
+    `[signaling] bound on every interface. Point SIGNALING_URL at a reachable address such as ws://<this-machine>:${handle.port} — not ${host}`,
+  );
+}
 
 let shuttingDown = false;
 function shutdown(signal: string): void {

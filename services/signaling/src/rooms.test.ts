@@ -62,6 +62,18 @@ test("only the host can change the temporary password", () => {
   assert.deepEqual(registry.setPassword("host", undefined), { ok: true, enabled: false });
 });
 
+test("the host can end the session and keep the same device code", () => {
+  const registry = new RoomRegistry(() => "123456789");
+  registry.create("host");
+  registry.join("controller", "123456789");
+  assert.deepEqual(registry.endSession("controller"), { ok: false, error: "not-host" });
+  const ended = registry.endSession("host");
+  assert.deepEqual(ended, { ok: true, code: "123456789", peerId: "controller" });
+  assert.equal(registry.join("next", "123456789").ok, true);
+  assert.deepEqual(registry.relay("next"), { peerId: "host", role: "controller", code: "123456789" });
+  assert.deepEqual(registry.endSession("missing"), { ok: false, error: "not-in-room" });
+});
+
 test("unknown device codes do not join and a client cannot open two rooms", () => {
   const registry = new RoomRegistry(() => "123456789");
   assert.deepEqual(registry.join("c", "000000000"), { ok: false, error: "room-not-found" });

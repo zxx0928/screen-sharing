@@ -38,6 +38,7 @@ test("client messages accept a join code with a password and reject garbage", ()
   assert.equal(parseClientMessage({ type: "join-room", code: "12" }), null);
   assert.equal(parseClientMessage({ type: "signal", payload: { type: "offer", sdp: "" } }), null);
   assert.deepEqual(parseClientMessage({ type: "leave", extra: true }), { type: "leave" });
+  assert.deepEqual(parseClientMessage({ type: "end-session" }), { type: "end-session" });
 });
 
 test("input events require normalized coordinates and a physical key code", () => {

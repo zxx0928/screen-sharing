@@ -84,6 +84,23 @@ export class RoomRegistry {
     return { ok: true, enabled: Boolean(room.password) };
   }
 
+  /**
+   * Host ends the WebRTC session without deleting the device-code room.
+   * The controller seat is freed so the next join does not see `room-full`.
+   */
+  endSession(clientId: string): { ok: true; code: string; peerId?: string } | { ok: false; error: ErrorCode } {
+    const member = this.membership.get(clientId);
+    if (!member) return { ok: false, error: "not-in-room" };
+    if (member.role !== "host") return { ok: false, error: "not-host" };
+    const room = this.rooms.get(member.code);
+    if (!room) return { ok: false, error: "not-in-room" };
+    const peerId = room.controllerId;
+    if (!peerId) return { ok: true, code: room.code };
+    this.membership.delete(peerId);
+    delete room.controllerId;
+    return { ok: true, code: room.code, peerId };
+  }
+
   relay(clientId: string): { peerId: string; role: Role; code: string } | { error: ErrorCode } {
     const member = this.membership.get(clientId);
     if (!member) return { error: "not-in-room" };

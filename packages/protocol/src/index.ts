@@ -141,12 +141,17 @@ export type SessionSync = {
 
 export type DataChannelControl = SessionState | SessionSync;
 
-/** Messages a client may send to the signaling server. Role is assigned by the server. */
+/**
+ * Messages a client may send to the signaling server. Role is assigned by the server.
+ * `end-session` is host-only: drop the controller and keep the device-code room.
+ * `leave` is either peer leaving; a host leave deletes the room.
+ */
 export type ClientMessage =
   | { type: "create-room"; password?: string }
   | { type: "join-room"; code: string; password?: string }
   | { type: "set-password"; password?: string }
   | { type: "signal"; payload: RtcSignal }
+  | { type: "end-session" }
   | { type: "leave" };
 
 /** Messages the signaling server sends to a client. */
@@ -212,6 +217,8 @@ export function parseClientMessage(value: unknown): ClientMessage | null {
       const payload = parseRtcSignal(value.payload);
       return payload ? { type: "signal", payload } : null;
     }
+    case "end-session":
+      return { type: "end-session" };
     case "leave":
       return { type: "leave" };
     default:
