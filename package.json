@@ -2,7 +2,7 @@
   "name": "screen-sharing",
   "private": true,
   "version": "0.0.1",
-  "description": "1:1 remote desktop (ToDesk/Sunflower style) — Phase 1 skeleton",
+  "description": "1:1 remote desktop (ToDesk/Sunflower style)",
   "workspaces": [
     "packages/*",
     "services/*",

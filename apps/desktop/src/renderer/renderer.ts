@@ -23,10 +23,11 @@ const ERROR_TEXT: Record<ErrorCode, string> = {
 };
 
 const CAPTURE_TEXT: Record<CaptureSource, string> = {
-  "display-media": "采集：系统屏幕（getDisplayMedia，DXGI 尚未接入）",
-  placeholder: "采集：占位画面。TODO(windows-dxgi) 接入后再替换。",
-  "electron-desktop": "采集：Electron desktopCapturer",
-  dxgi: "采集：DXGI",
+  "display-media": "采集：getDisplayMedia",
+  placeholder: "采集：占位画面（当前没有屏幕轨）",
+  "electron-desktop": "采集：Electron desktopCapturer（Chromium DXGI）",
+  dxgi: "采集：DXGI Desktop Duplication",
+  "dxgi-h264": "采集：DXGI Desktop Duplication（H.264）",
 };
 
 const state = {

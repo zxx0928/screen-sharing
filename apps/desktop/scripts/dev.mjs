@@ -3,7 +3,10 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { ensureNativeAddon } from "./build-native.mjs";
 import { copyStatic, startWatch } from "./bundle.mjs";
+
+ensureNativeAddon();
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const require = createRequire(path.join(appRoot, "package.json"));

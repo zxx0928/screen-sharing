@@ -9,9 +9,11 @@
     "dev": "node scripts/dev.mjs",
     "prebuild": "npm run build -w @screen-sharing/protocol",
     "build": "node scripts/build.mjs",
+    "build:native": "node scripts/build-native.mjs",
     "prestart": "npm run build",
     "start": "electron .",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test src/main/input-mapping.test.ts src/main/capture-plan.test.ts src/main/native-addon.test.ts src/main/annexb.test.ts"
   },
   "dependencies": {
     "@screen-sharing/protocol": "0.0.1"
@@ -20,6 +22,8 @@
     "@types/node": "^22.15.0",
     "electron": "^45.0.0",
     "esbuild": "^0.25.0",
+    "node-gyp": "^11.2.0",
+    "tsx": "^4.20.0",
     "typescript": "~5.9.3"
   }
 }

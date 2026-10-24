@@ -54,9 +54,13 @@ export function bindControllerInput(channel: RTCDataChannel, stage: HTMLElement,
     if (!button) return;
     stage.focus();
     event.preventDefault();
+    const point = normalizedPoint(video, event.clientX, event.clientY);
+    if (!point) return;
     held.add(button);
+    // The click has to land on this pixel, so the move cannot wait for the next frame.
+    pendingMove = null;
+    send({ type: "mouse-move", x: point.x, y: point.y, normalized: true });
     send({ type: "mouse-button", button, action: "down" });
-    queueMoveFromEvent(event, queueMove, video);
   };
 
   const onPointerMove = (event: PointerEvent): void => {

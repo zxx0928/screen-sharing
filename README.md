@@ -4,9 +4,9 @@
 
 Phase-1 skeleton for a 1:1 remote desktop, in the shape of ToDesk / Sunflower. The controlled host shows a device code and an optional temporary password; the controller types that code to connect. This is not a multi-party meeting.
 
-同一个 Electron 客户端既能当被控端，也能当控制端。Phase 1 先把仓库、信令和会话骨架跑起来，Windows 的 DXGI 采集和键鼠注入留给后续原生成模块。
+同一个 Electron 客户端既能当被控端，也能当控制端。Windows 上，主进程用 DXGI Desktop Duplication 采集屏幕，用 `SendInput` 注入键鼠。macOS 不在这次范围内。
 
-The same Electron client plays both roles. Phase 1 is a runnable skeleton: signaling, UI, and a WebRTC session with clear extension points. Windows DXGI capture and OS input injection come later as native modules.
+The same Electron client plays both roles. On Windows the main process captures with DXGI Desktop Duplication and injects keyboard and mouse with `SendInput`. macOS is out of scope.
 
 ## 技术栈 / Stack
 
@@ -29,7 +29,8 @@ packages/protocol     两边共用的信令消息和键鼠事件类型
 | --- | --- |
 | `packages/protocol` | 设备码、临时密码、SDP/ICE、键鼠事件的共享约定 |
 | `services/signaling` | 内存房间：创建 / 加入 / 转发 SDP 与 ICE / 离开 |
-| `apps/desktop/src/main` | 窗口，以及以后的 DXGI、SendInput |
+| `apps/desktop/src/main` | 窗口、DXGI 采集泵、SendInput 注入 |
+| `apps/desktop/native/win32` | N-API 插件：Desktop Duplication、`SendInput`、H.264 MFT 探测 |
 | `apps/desktop/src/preload` | 渲染进程和主进程之间的窄桥 |
 | `apps/desktop/src/renderer` | 设备码界面、WebRTC、DataChannel |
 
@@ -87,13 +88,31 @@ npm test
 npm run typecheck
 ```
 
+### Windows 编译与运行 / Windows build and run
+
+详细说明在 [docs/windows.md](docs/windows.md)。最短路径：
+
+1. 安装 Visual Studio 2022 Build Tools（“使用 C++ 的桌面开发”）和 Windows 10/11 SDK，以及 Python 3。
+2. 在仓库根目录执行 `npm install`。
+3. 编译原生插件（`npm run dev` / `npm run build` 在 Windows 上也会自动编）：
+
+```bash
+npm run build:native -w @screen-sharing/desktop
+```
+
+4. `npm run dev`。被控端连上后，状态应显示「采集：DXGI Desktop Duplication（H.264）」。同步编码器打不开时退回不带 H.264 的 DXGI 状态，画面走 JPEG。控制端在画面里移动鼠标，被控端光标会跟着走。
+
+原生插件只在 `win32` 上编译。Linux 上 `npm test` 和 `npm run typecheck` 会跳过它，用来守住坐标映射、扫描码和采集计划。
+
+The native addon builds on win32 only. Linux still runs `npm test` and `npm run typecheck`; those cover coordinate mapping, scan codes, and the capture plan.
+
 ### 本地怎么试一条会话
 
 1. 启动 `npm run dev`，窗口左侧会出现 9 位设备码和临时密码。
 2. 再开一个客户端（另一个终端执行 `npm run dev:desktop`），或在**同一个窗口**右侧输入自己的设备码和密码，点连接。
-3. 自连时，右侧会看到本机屏幕或占位画面。在画面上移动鼠标，被控端主进程日志里会出现 `[input] stub ...`。那就是键鼠注入的挂载点，现在不会操作系统。
+3. Windows 上装好原生插件后，右侧是 DXGI 画面，鼠标和键盘会通过 `SendInput` 作用到被控端。插件还没编出来时，Windows 会退回 Electron 的 desktopCapturer；其他系统仍用 `getDisplayMedia`。两者都失败时才是占位画面。
 
-占位画面上写着 `TODO(windows-dxgi)`。没有真实屏幕时这是预期结果。
+Linux 上没有 `.node` 插件，主进程会打一行 `[input] win32 addon not loaded; not calling SendInput`，并且不会去调系统输入。
 
 ## 字段 / Fields
 
@@ -107,7 +126,7 @@ npm run typecheck
 | `sdp` | WebRTC 协商描述，信令不解析 | 字符串 | 对端之间原样转发 |
 | `candidate` | ICE 候选，信令不解析 | 对象或 `null` | 对端之间原样转发 |
 | `from` | 这条 SDP/ICE 是哪一方发出的 | `host` \| `controller` | 信令盖章，客户端不填写 |
-| `InputEvent.x` / `y` | 控制端看到的**画面内容区域**上的位置，左上角是 0，范围 0 到 1，已经去掉黑边 | 数字 | 只走 DataChannel。被控端以后按采集画面的原点映射成像素 |
+| `InputEvent.x` / `y` | 控制端看到的**画面内容区域**上的位置，左上角是 0，范围 0 到 1，已经去掉黑边 | 数字 | 只走 DataChannel。被控端用 DXGI 输出的物理像素原点映射：`pixel = origin + round(t * (size - 1))`，再换成虚拟屏幕上的 `SendInput` 绝对坐标 |
 | `InputEvent.code` | 物理按键，对应 `KeyboardEvent.code`（如 `KeyA`） | 字符串 | 只走 DataChannel。不重复发送自动连发，按键按住后的连发交给被控端系统 |
 | `deltaX` / `deltaY` | 控制端滚轮的 DOM 增量，`deltaY` 为正表示向下 | 数字 | 只走 DataChannel |
 
@@ -120,17 +139,17 @@ npm run typecheck
 - 可运行的单体仓库和中英说明
 - 内存设备码房间：创建、加入、临时密码、SDP/ICE 转发、离开、断线
 - Electron 界面：本机设备码、输入设备码连接、远端画面、断开
-- WebRTC 会话骨架：优先 `getDisplayMedia`，失败则用画布占位轨
-- 键鼠事件类型，以及主进程里的注入桩（只打日志）
+- Windows DXGI Desktop Duplication：主进程拿到 BGRA 帧，用同步 Media Foundation H.264 MFT 编成 Annex-B。渲染进程用 WebCodecs 画到 canvas，再交给 WebRTC。编码器打不开时退回 WIC JPEG
+- Windows `SendInput`：扫描码键盘、虚拟屏幕绝对坐标的鼠标、滚轮方向已按 DOM 约定转换
+- 其它平台仍可用 `getDisplayMedia` 或占位画面把会话跑起来
 
 现在没有：
 
-- 真正的 Windows DXGI 采集和硬件编码
-- 真正的键鼠注入
+- 把 H.264 留在 GPU 上，并用硬件异步 MFT 直接送进 RTP。现在仍会解码到 canvas，由 Chromium 再编码一次。下一步写在 [docs/windows.md](docs/windows.md)
 - macOS
 - TURN / coturn（跨网穿透）
 - 账号、设备码防爆破、密码哈希、房间持久化
-- 剪贴板、文件传输、多显示器策略
+- 剪贴板、文件传输、多显示器切换策略（坐标映射已按多屏虚拟桌面计算，采集默认主显示器）
 - 多人会议
 
 ## 扩展点 / Where to plug in
@@ -139,9 +158,9 @@ npm run typecheck
 
 | 标记 | 位置 | 要接什么 |
 | --- | --- | --- |
-| `TODO(windows-dxgi)` | `apps/desktop/src/main/capture-plan.ts`、`apps/desktop/src/renderer/capture.ts` | Win32 DXGI Desktop Duplication。原生成模块放在**主进程**，渲染进程开了沙箱，不能加载 `.node` |
-| `TODO(windows-input)` | `apps/desktop/src/main/input-injection.ts` | Win32 `SendInput`。渲染进程把 DataChannel 里的 `InputEvent` 经 preload 送到这里 |
-| `TODO(encode)` | `apps/desktop/src/renderer/capture.ts` | 采集落地后的码率、帧率 |
+| DXGI 采集 | `apps/desktop/native/win32`、`src/main/dxgi-host.ts` | 已接上。渲染进程开了沙箱，不能加载 `.node` |
+| `SendInput` | `src/main/input-injection.ts`、`native/win32/src/send_input.cc` | 已接上。DataChannel 的 `InputEvent` 经 preload 进主进程 |
+| H.264 | `native/win32/src/h264_encoder.cc`、`src/renderer/h264-preview.ts` | 同步 MFT 已接上。下一步是 GPU NV12 和不再二次编码的 RTP |
 | `TODO(turn)` | `apps/desktop/src/renderer/peer-session.ts` | 自建 coturn。不要把长期凭证提交进仓库 |
 | `TODO(macos)` | `capture-plan.ts`、`input-injection.ts` | 以后的 ScreenCaptureKit 和 CGEvent |
 
@@ -154,11 +173,11 @@ flowchart LR
   host -->|创建房间| signaling
   host -->|WebRTC 屏幕轨| controller
   controller -->|DataChannel 键鼠| host
-  host -.-> dxgi[TODO DXGI]
-  host -.-> inject[TODO SendInput]
+  host --> dxgi[DXGI Desktop Duplication]
+  host --> inject[SendInput]
 ```
 
-原生模块以后加进 `apps/desktop/scripts/bundle.mjs` 的 `external` 列表，esbuild 不能打包 `.node`。
+`screen_sharing_win32.node` 已经列在 `apps/desktop/scripts/bundle.mjs` 的 `external` 里。esbuild 不能打包 `.node`，主进程按绝对路径加载。
 
 ## 信令进程模型 / Signaling notes
 

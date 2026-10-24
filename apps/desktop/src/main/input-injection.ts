@@ -1,45 +1,95 @@
 import type { InputEvent } from "@screen-sharing/protocol";
+import { InjectionSession } from "./injection-session";
+import { isUsableTarget, type InjectionTarget } from "./input-mapping";
+import { getWin32Addon } from "./native-addon";
+import { dispatchWin32Inputs } from "./win32-dispatch";
 
 /**
- * Windows input injection extension point.
- *
- * Phase 1 logs a few events and does not touch the OS.
- *
- * TODO(windows-input): load a win32 N-API addon from this main process and
- * call SendInput. The renderer only forwards events; it cannot inject.
- *
- * Expected addon behavior:
- * - `mouse-move` x/y are 0..1 across the captured video frame (the controller
- *   already removed letterboxing). Map them with the capture origin:
- *   pixelX = originX + x * captureWidth, pixelY = originY + y * captureHeight.
- *   Multi-monitor origins are not always (0, 0).
- * - `mouse-button` / `mouse-wheel` use the same pointer. Wheel deltas are DOM
- *   WheelEvent deltas (positive deltaY scrolls down), not Win32 notches.
- * - `key.code` is a W3C KeyboardEvent.code (`KeyA`, `ShiftLeft`). Map it to a
- *   scan code. Ignore auto-repeat; the controller does not send it.
- * - On session end, send key-up for every key this session pressed so a
- *   dropped connection cannot leave Shift or Ctrl stuck.
- *
- * TODO(macos): CGEvent injection, same function, `darwin` only.
+ * Host input injection. The renderer forwards DataChannel events here.
+ * On Windows the commands are passed to `SendInput` through the native addon.
+ * macOS is out of scope (TODO(macos): CGEvent).
  */
 
-let mouseMovesLogged = 0;
-let sawInput = false;
+const session = new InjectionSession();
+let pinnedTarget: InjectionTarget | null = null;
+let cachedTarget: { at: number; target: InjectionTarget } | null = null;
+let activeDisplayIndex = 0;
+let reportedNative = false;
+let reportedMissing = false;
+
+export function setActiveDisplayIndex(displayIndex: number): void {
+  if (Number.isInteger(displayIndex) && displayIndex >= 0) activeDisplayIndex = displayIndex;
+}
+
+/** Called when DXGI duplication starts so the pointer maps onto that output. */
+export function noteCaptureGeometry(target: InjectionTarget): void {
+  if (!isUsableTarget(target)) {
+    console.error("[input] ignored unusable capture geometry");
+    return;
+  }
+  pinnedTarget = target;
+  cachedTarget = null;
+}
 
 export function injectInput(event: InputEvent): void {
-  sawInput = true;
-  if (event.type === "mouse-move") {
-    mouseMovesLogged += 1;
-    if (mouseMovesLogged > 3) return;
-  }
-  console.log("[input] stub", JSON.stringify(event));
-  // TODO(windows-input): nativeInject(event);
+  const commands = session.apply(event, currentTarget());
+  submit(commands);
 }
 
 export function releaseInjectedInput(): void {
-  if (!sawInput) return;
-  sawInput = false;
-  mouseMovesLogged = 0;
-  console.log("[input] session end — release stub");
-  // TODO(windows-input): key-up for every modifier this session pressed.
+  const commands = session.release();
+  pinnedTarget = null;
+  cachedTarget = null;
+  if (commands.length === 0) return;
+  submit(commands);
+  console.log(`[input] session end — released ${commands.length} held inputs`);
+}
+
+function currentTarget(): InjectionTarget | null {
+  if (pinnedTarget) return pinnedTarget;
+  if (cachedTarget && Date.now() - cachedTarget.at < 2000) return cachedTarget.target;
+  const addon = getWin32Addon();
+  if (!addon) return null;
+  try {
+    const layout = addon.getDesktopLayout();
+    const display =
+      layout.displays.find((item) => item.index === activeDisplayIndex) ??
+      layout.displays.find((item) => item.primary) ??
+      layout.displays[0];
+    if (!display) return null;
+    const target: InjectionTarget = {
+      capture: {
+        originX: display.originX,
+        originY: display.originY,
+        width: display.width,
+        height: display.height,
+      },
+      virtualScreen: layout.virtualScreen,
+    };
+    if (!isUsableTarget(target)) return null;
+    cachedTarget = { at: Date.now(), target };
+    return target;
+  } catch (error) {
+    console.error("[input] getDesktopLayout failed", error);
+    return null;
+  }
+}
+
+function submit(commands: ReturnType<InjectionSession["apply"]>): void {
+  if (commands.length === 0) return;
+  const addon = getWin32Addon();
+  if (!addon) {
+    if (!reportedMissing) {
+      reportedMissing = true;
+      console.warn("[input] win32 addon not loaded; not calling SendInput");
+    }
+    return;
+  }
+  const sent = dispatchWin32Inputs(addon, commands);
+  if (!reportedNative && sent > 0) {
+    reportedNative = true;
+    console.log("[input] SendInput ready");
+  }
+  if (sent < 0) console.error("[input] SendInput rejected the batch");
+  else if (sent !== commands.length) console.warn(`[input] SendInput accepted ${sent} of ${commands.length}`);
 }
