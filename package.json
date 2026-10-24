@@ -1,0 +1,27 @@
+{
+  "name": "screen-sharing",
+  "private": true,
+  "version": "0.0.1",
+  "description": "1:1 remote desktop (ToDesk/Sunflower style) — Phase 1 skeleton",
+  "workspaces": [
+    "packages/*",
+    "services/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run build -w @screen-sharing/protocol && concurrently -n protocol,signaling,desktop -c magenta,blue,green \"npm run dev -w @screen-sharing/protocol\" \"npm run dev -w @screen-sharing/signaling\" \"npm run dev -w @screen-sharing/desktop\"",
+    "dev:signaling": "npm run dev -w @screen-sharing/signaling",
+    "dev:desktop": "npm run dev -w @screen-sharing/desktop",
+    "start:signaling": "npm run start -w @screen-sharing/signaling",
+    "build": "npm run build -w @screen-sharing/protocol && npm run build -w @screen-sharing/signaling && npm run build -w @screen-sharing/desktop",
+    "typecheck": "npm run build -w @screen-sharing/protocol && npm run typecheck --workspaces --if-present",
+    "test": "npm run build -w @screen-sharing/protocol && npm run test --workspaces --if-present",
+    "prepare": "npm run build -w @screen-sharing/protocol"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

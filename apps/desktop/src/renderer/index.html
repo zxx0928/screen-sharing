@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' ws: wss:; media-src 'self' blob:; img-src 'self' data:"
+    />
+    <title>屏幕共享</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="mark" aria-hidden="true"></span>
+        <div>
+          <strong>屏幕共享</strong>
+          <span>Screen Sharing</span>
+        </div>
+      </div>
+      <div class="topbar-meta">
+        <span id="phase-pill">Phase 1</span>
+        <span id="sig-status" class="status connecting">正在连接信令…</span>
+      </div>
+    </header>
+
+    <main id="view-home">
+      <section class="card" aria-labelledby="host-heading">
+        <div class="card-head">
+          <h2 id="host-heading">本机设备 <span>This device</span></h2>
+          <button id="copy-code" type="button" class="ghost" disabled>复制设备码</button>
+        </div>
+        <p class="hint">把设备码告诉对方，对方即可连接这台电脑。同一窗口输入自己的设备码也能打通链路。</p>
+        <div id="device-code" class="code" aria-live="polite">
+          <span id="code-a">———</span>
+          <span id="code-b">———</span>
+          <span id="code-c">———</span>
+        </div>
+        <p id="host-peer" class="peer">等待信令</p>
+        <p id="capture-status" class="hint"></p>
+
+        <div class="password-row">
+          <label class="check">
+            <input id="pw-enabled" type="checkbox" checked />
+            启用临时密码 <span>Temporary password</span>
+          </label>
+          <button id="copy-password" type="button" class="ghost">复制</button>
+        </div>
+        <div class="password-edit">
+          <input id="pw-value" type="text" maxlength="64" spellcheck="false" autocomplete="off" aria-label="临时密码" />
+          <button id="pw-regen" type="button" class="ghost">换一个</button>
+          <button id="pw-apply" type="button">应用</button>
+        </div>
+        <p id="host-error" class="error" hidden></p>
+      </section>
+
+      <section class="card" aria-labelledby="connect-heading">
+        <h2 id="connect-heading">连接到设备 <span>Connect</span></h2>
+        <p class="hint">输入对方的 9 位设备码。这是一对一远控，不是多人会议。</p>
+        <form id="connect-form">
+          <label>
+            设备码
+            <input
+              id="remote-code"
+              name="code"
+              inputmode="numeric"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="123 456 789"
+              maxlength="11"
+            />
+          </label>
+          <label>
+            临时密码（可选）
+            <input id="remote-password" name="password" type="text" autocomplete="off" spellcheck="false" maxlength="64" />
+          </label>
+          <button id="connect-btn" type="submit">连接</button>
+          <p id="connect-error" class="error" hidden></p>
+        </form>
+      </section>
+    </main>
+
+    <section id="view-remote" hidden>
+      <div class="session-bar">
+        <div>
+          <strong id="session-title">正在连接</strong>
+          <span id="session-detail"></span>
+          <span id="host-banner" class="banner" hidden>本机也正被控制</span>
+        </div>
+        <button id="disconnect-btn" type="button" class="danger">断开</button>
+      </div>
+      <div id="stage" class="stage" tabindex="0">
+        <video id="remote-video" autoplay muted playsinline></video>
+        <div id="stage-placeholder">等待对方画面…</div>
+      </div>
+      <p class="hint input-hint">键鼠事件经 DataChannel 发到被控端。Phase 1 只记录，不注入系统。</p>
+    </section>
+
+    <script src="./renderer.js"></script>
+  </body>
+</html>

@@ -1,0 +1,16 @@
+node_modules/
+dist/
+*.tsbuildinfo
+*.log
+.DS_Store
+.env
+.env.*
+!.env.example
+
+# Electron packager output (not part of Phase 1)
+release/
+out/
+
+# Future native addon build output (DXGI capture / SendInput). Do not commit.
+build/Release/
+*.node
