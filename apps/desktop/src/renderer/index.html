@@ -39,6 +39,14 @@
         </div>
         <p id="host-peer" class="peer">等待信令</p>
         <p id="capture-status" class="hint"></p>
+        <div class="share-controls">
+          <button id="share-toggle" type="button" class="ghost" disabled>开始共享</button>
+          <label class="check">
+            <input id="control-enabled" type="checkbox" disabled />
+            允许远程控制 <span>Remote control</span>
+          </label>
+        </div>
+        <p class="hint">控制端连上后默认开始共享。远程控制默认关闭，勾选后这台电脑才会注入键鼠。停止共享不会断开房间。</p>
 
         <div class="password-row">
           <label class="check">
@@ -88,13 +96,24 @@
           <span id="session-detail"></span>
           <span id="host-banner" class="banner" hidden>本机也正被控制</span>
         </div>
-        <button id="disconnect-btn" type="button" class="danger">断开</button>
+        <div class="session-actions">
+          <span id="remote-share" class="pill">画面：共享中</span>
+          <span id="remote-control" class="pill off">远程控制：关</span>
+          <div id="session-host-controls" class="session-host" hidden>
+            <button id="session-share-toggle" type="button" class="ghost">停止共享</button>
+            <label class="check">
+              <input id="session-control-enabled" type="checkbox" />
+              允许远程控制
+            </label>
+          </div>
+          <button id="disconnect-btn" type="button" class="danger">断开</button>
+        </div>
       </div>
       <div id="stage" class="stage" tabindex="0">
         <video id="remote-video" autoplay muted playsinline></video>
         <div id="stage-placeholder">等待对方画面…</div>
       </div>
-      <p class="hint input-hint">键鼠事件经 DataChannel 发到被控端。Phase 1 只记录，不注入系统。</p>
+      <p class="hint input-hint">远程控制默认关闭。被控端勾选「允许远程控制」后，键鼠才经 DataChannel 注入对方。</p>
     </section>
 
     <script src="./renderer.js"></script>

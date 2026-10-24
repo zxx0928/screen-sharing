@@ -1,21 +1,26 @@
-import type { InputEvent } from "@screen-sharing/protocol";
+import { DEFAULT_REMOTE_CONTROL_ENABLED, type InputEvent } from "@screen-sharing/protocol";
 import { InjectionSession } from "./injection-session";
 import { isUsableTarget, type InjectionTarget } from "./input-mapping";
 import { getWin32Addon } from "./native-addon";
+import { RemoteControlGate } from "./remote-control";
 import { dispatchWin32Inputs } from "./win32-dispatch";
 
 /**
  * Host input injection. The renderer forwards DataChannel events here.
  * On Windows the commands are passed to `SendInput` through the native addon.
+ * Remote control is off until `setRemoteControlAllowed(true)`. While it is
+ * off this module returns before the addon, so SendInput is not called.
  * macOS is out of scope (TODO(macos): CGEvent).
  */
 
 const session = new InjectionSession();
+const gate = new RemoteControlGate(session, DEFAULT_REMOTE_CONTROL_ENABLED);
 let pinnedTarget: InjectionTarget | null = null;
 let cachedTarget: { at: number; target: InjectionTarget } | null = null;
 let activeDisplayIndex = 0;
 let reportedNative = false;
 let reportedMissing = false;
+let reportedBlocked = false;
 
 export function setActiveDisplayIndex(displayIndex: number): void {
   if (Number.isInteger(displayIndex) && displayIndex >= 0) activeDisplayIndex = displayIndex;
@@ -31,18 +36,38 @@ export function noteCaptureGeometry(target: InjectionTarget): void {
   cachedTarget = null;
 }
 
+/** Host policy. `false` drops later events and releases anything this session is holding. */
+export function setRemoteControlAllowed(allowed: boolean): void {
+  const result = gate.setAllowed(allowed);
+  if (!result.changed) return;
+  reportedBlocked = false;
+  if (result.release.length > 0) {
+    submit(result.release);
+    console.log(`[input] remote control off — released ${result.release.length} held inputs`);
+    return;
+  }
+  console.log(`[input] remote control ${gate.isAllowed() ? "on" : "off"}`);
+}
+
 export function injectInput(event: InputEvent): void {
-  const commands = session.apply(event, currentTarget());
-  submit(commands);
+  if (!gate.isAllowed()) {
+    if (!reportedBlocked) {
+      reportedBlocked = true;
+      console.warn("[input] remote control is off; not calling SendInput");
+    }
+    return;
+  }
+  submit(gate.commandsFor(event, currentTarget()));
 }
 
 export function releaseInjectedInput(): void {
-  const commands = session.release();
+  const result = gate.setAllowed(false);
   pinnedTarget = null;
   cachedTarget = null;
-  if (commands.length === 0) return;
-  submit(commands);
-  console.log(`[input] session end — released ${commands.length} held inputs`);
+  reportedBlocked = false;
+  if (result.release.length === 0) return;
+  submit(result.release);
+  console.log(`[input] session end — released ${result.release.length} held inputs`);
 }
 
 function currentTarget(): InjectionTarget | null {

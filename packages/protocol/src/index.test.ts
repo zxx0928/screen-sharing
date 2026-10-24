@@ -1,12 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  DEFAULT_REMOTE_CONTROL_ENABLED,
+  DEFAULT_SHARING_ENABLED,
   formatDeviceCode,
   normalizeDeviceCode,
   normalizeTemporaryPassword,
   parseClientMessage,
+  parseDataChannelControl,
   parseInputEvent,
   parseServerMessage,
+  serializeSessionState,
+  serializeSessionSync,
 } from "./index.js";
 
 test("device codes ignore spaces and hyphens", () => {
@@ -45,6 +50,31 @@ test("input events require normalized coordinates and a physical key code", () =
   assert.equal(parseInputEvent({ type: "mouse-move", x: 12, y: 0, normalized: true }), null);
   assert.equal(parseInputEvent({ type: "key", code: "KeyA", action: "down" })?.type, "key");
   assert.equal(parseInputEvent({ type: "key", code: "a b", action: "down" }), null);
+});
+
+test("share starts on connect and remote control stays off until the host allows it", () => {
+  assert.equal(DEFAULT_SHARING_ENABLED, true);
+  assert.equal(DEFAULT_REMOTE_CONTROL_ENABLED, false);
+});
+
+test("session policy rides the datachannel and is not a signaling message", () => {
+  assert.deepEqual(parseDataChannelControl({ type: "session-state", sharing: false, control: true }), {
+    type: "session-state",
+    sharing: false,
+    control: true,
+  });
+  assert.deepEqual(parseDataChannelControl(JSON.parse(serializeSessionState(true, false))), {
+    type: "session-state",
+    sharing: true,
+    control: false,
+  });
+  assert.deepEqual(parseDataChannelControl(JSON.parse(serializeSessionSync())), { type: "session-sync" });
+  assert.equal(parseDataChannelControl({ type: "session-state", sharing: "no", control: false }), null);
+  assert.equal(parseDataChannelControl({ type: "session-state", sharing: false }), null);
+  assert.equal(parseInputEvent({ type: "session-state", sharing: false, control: false }), null);
+  assert.equal(parseClientMessage({ type: "session-state", sharing: false, control: false }), null);
+  assert.equal(parseClientMessage({ type: "session-sync" }), null);
+  assert.equal(parseClientMessage({ type: "leave" })?.type, "leave");
 });
 
 test("server errors keep the stable error code", () => {

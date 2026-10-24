@@ -22,6 +22,9 @@ const api: DesktopApi = {
   injectInput: (event: InputEvent) => {
     ipcRenderer.send(IpcChannel.injectInput, event);
   },
+  setRemoteControl: (allowed: boolean) => {
+    ipcRenderer.send(IpcChannel.setRemoteControl, allowed);
+  },
   endInputSession: () => {
     ipcRenderer.send(IpcChannel.endInputSession);
   },

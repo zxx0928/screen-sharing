@@ -17,6 +17,10 @@ import { RoomRegistry } from "./rooms.js";
  * product is 1:1 remote desktop, not a meeting.
  *
  * Rooms live in memory only. Restarting the process invalidates every code.
+ *
+ * Share on/off and remote-control permission are not room events. They travel
+ * on the input DataChannel (`session-state`). Stopping the picture must not
+ * look like `leave`: the device-code room stays up.
  */
 
 const MAX_PAYLOAD_BYTES = 256 * 1024;

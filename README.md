@@ -100,7 +100,7 @@ npm run typecheck
 npm run build:native -w @screen-sharing/desktop
 ```
 
-4. `npm run dev`。被控端连上后，状态应显示「采集：DXGI Desktop Duplication（H.264）」。同步编码器打不开时退回不带 H.264 的 DXGI 状态，画面走 JPEG。控制端在画面里移动鼠标，被控端光标会跟着走。
+4. `npm run dev`。被控端连上后默认开始共享，状态应显示「采集：DXGI Desktop Duplication（H.264）」。同步编码器打不开时退回不带 H.264 的 DXGI 状态，画面走 JPEG。远程控制默认关闭。被控端勾选「允许远程控制」后，控制端在画面里移动鼠标，被控端光标才会跟着走。
 
 原生插件只在 `win32` 上编译。Linux 上 `npm test` 和 `npm run typecheck` 会跳过它，用来守住坐标映射、扫描码和采集计划。
 
@@ -110,7 +110,7 @@ The native addon builds on win32 only. Linux still runs `npm test` and `npm run 
 
 1. 启动 `npm run dev`，窗口左侧会出现 9 位设备码和临时密码。
 2. 再开一个客户端（另一个终端执行 `npm run dev:desktop`），或在**同一个窗口**右侧输入自己的设备码和密码，点连接。
-3. Windows 上装好原生插件后，右侧是 DXGI 画面，鼠标和键盘会通过 `SendInput` 作用到被控端。插件还没编出来时，Windows 会退回 Electron 的 desktopCapturer；其他系统仍用 `getDisplayMedia`。两者都失败时才是占位画面。
+3. Windows 上装好原生插件后，右侧是 DXGI 画面。被控端默认开始共享。远程控制默认关闭，被控端勾选「允许远程控制」后，鼠标和键盘才会通过 `SendInput` 作用到被控端。被控端点「停止共享」后，控制端不再显示画面，设备码房间和 WebRTC 连接保持，可以再点「开始共享」。插件还没编出来时，Windows 会退回 Electron 的 desktopCapturer；其他系统仍用 `getDisplayMedia`。两者都失败时才是占位画面。
 
 Linux 上没有 `.node` 插件，主进程会打一行 `[input] win32 addon not loaded; not calling SendInput`，并且不会去调系统输入。
 
@@ -129,6 +129,9 @@ Linux 上没有 `.node` 插件，主进程会打一行 `[input] win32 addon not 
 | `InputEvent.x` / `y` | 控制端看到的**画面内容区域**上的位置，左上角是 0，范围 0 到 1，已经去掉黑边 | 数字 | 只走 DataChannel。被控端用 DXGI 输出的物理像素原点映射：`pixel = origin + round(t * (size - 1))`，再换成虚拟屏幕上的 `SendInput` 绝对坐标 |
 | `InputEvent.code` | 物理按键，对应 `KeyboardEvent.code`（如 `KeyA`） | 字符串 | 只走 DataChannel。不重复发送自动连发，按键按住后的连发交给被控端系统 |
 | `deltaX` / `deltaY` | 控制端滚轮的 DOM 增量，`deltaY` 为正表示向下 | 数字 | 只走 DataChannel |
+| `session-state.sharing` | 被控端是否正在把画面送出去 | boolean | 只走 DataChannel，被控端发给控制端。`false` 时视频轨换成空轨，不发 `leave`，房间还在。默认 `true` |
+| `session-state.control` | 被控端是否允许把键鼠注入本机 | boolean | 只走 DataChannel。`false` 时被控端主进程在 `SendInput` 之前丢掉事件。默认 `false`，只有被控端勾选后才变成 `true` |
+| `session-sync` | 控制端向被控端要一份当前共享/控制状态 | 无其它字段 | DataChannel 一打开就发，避免第一条 `session-state` 比监听器更早到达 |
 
 一个房间最多一个被控端、一个控制端。第三个控制端会收到 `room-full`。
 
@@ -140,7 +143,8 @@ Linux 上没有 `.node` 插件，主进程会打一行 `[input] win32 addon not 
 - 内存设备码房间：创建、加入、临时密码、SDP/ICE 转发、离开、断线
 - Electron 界面：本机设备码、输入设备码连接、远端画面、断开
 - Windows DXGI Desktop Duplication：主进程拿到 BGRA 帧，用同步 Media Foundation H.264 MFT 编成 Annex-B。渲染进程用 WebCodecs 画到 canvas，再交给 WebRTC。编码器打不开时退回 WIC JPEG
-- Windows `SendInput`：扫描码键盘、虚拟屏幕绝对坐标的鼠标、滚轮方向已按 DOM 约定转换
+- Windows `SendInput`：扫描码键盘、虚拟屏幕绝对坐标的鼠标、滚轮方向已按 DOM 约定转换。远程控制默认关闭，被控端允许后才注入
+- 被控端可单独开始/停止共享。停止后控制端不再收画面，房间和连接不断开
 - 其它平台仍可用 `getDisplayMedia` 或占位画面把会话跑起来
 
 现在没有：

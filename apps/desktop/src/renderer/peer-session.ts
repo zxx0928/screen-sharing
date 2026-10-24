@@ -1,4 +1,10 @@
-import type { RtcSignal } from "@screen-sharing/protocol";
+import {
+  DEFAULT_REMOTE_CONTROL_ENABLED,
+  DEFAULT_SHARING_ENABLED,
+  serializeSessionState,
+  type RtcSignal,
+  type SessionState,
+} from "@screen-sharing/protocol";
 import { OUTBOUND_VIDEO_BITRATE, OUTBOUND_VIDEO_FRAMERATE } from "../main/h264-plan";
 import { acquireScreenTrack, type CaptureSource } from "./capture";
 import { bindControllerInput, bindHostInputChannel, INPUT_CHANNEL_LABEL } from "./input-channel";
@@ -18,6 +24,12 @@ export type PeerSession = {
   stop(): void;
 };
 
+/** Host-only. Share and remote control do not close the peer connection. */
+export type HostPeerSession = PeerSession & {
+  setSharing(enabled: boolean): void;
+  setRemoteControl(enabled: boolean): void;
+};
+
 type SessionOptions = {
   sendSignal: (payload: RtcSignal) => void;
   onConnectionState?: (state: RTCPeerConnectionState) => void;
@@ -25,71 +37,175 @@ type SessionOptions = {
   onError?: (error: unknown) => void;
 };
 
-export function startHostSession(options: SessionOptions): PeerSession {
+export function startHostSession(options: SessionOptions): HostPeerSession {
   const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
   let stopped = false;
+  let offered = false;
   let track: MediaStreamTrack | null = null;
+  let sharing = DEFAULT_SHARING_ENABLED;
+  let control = DEFAULT_REMOTE_CONTROL_ENABLED;
+  let chain: Promise<void> = Promise.resolve();
   const acceptSignal = createRemoteSignalHandler(pc, "host", options.sendSignal);
   attachIce(pc, options.sendSignal);
   watchState(pc, options.onConnectionState);
 
+  // The video m-line is negotiated once. Later start/stop only replaces the track.
+  const sender = pc.addTransceiver("video", { direction: "sendonly" }).sender;
   const channel = pc.createDataChannel(INPUT_CHANNEL_LABEL, { ordered: true });
-  bindHostInputChannel(channel);
 
-  void (async () => {
-    try {
-      const plan = await window.desktop.getCapturePlan();
-      if (stopped) return;
-      const captured = await acquireScreenTrack(plan);
-      if (stopped) {
-        captured.track.stop();
-        return;
-      }
-      track = captured.track;
-      track.addEventListener("ended", () => {
-        if (!stopped) options.onError?.(new Error("Screen track ended"));
+  const publish = (): void => {
+    if (stopped || channel.readyState !== "open") return;
+    channel.send(serializeSessionState(sharing, control));
+    console.log(`[session] sharing=${sharing} control=${control}`);
+  };
+
+  bindHostInputChannel(
+    channel,
+    () => control,
+    () => publish(),
+  );
+  channel.addEventListener("open", () => publish());
+  window.desktop.setRemoteControl(control);
+
+  const enqueue = (task: () => Promise<void>): void => {
+    chain = chain
+      .then(async () => {
+        if (stopped) return;
+        await task();
+      })
+      .catch((error: unknown) => {
+        if (!stopped) options.onError?.(error);
       });
-      options.onCaptureSource?.(captured.source);
-      pc.addTrack(track);
-      await configureOutboundVideo(pc, track);
-      const offer = await pc.createOffer();
-      if (stopped || !offer.sdp) return;
-      await pc.setLocalDescription(offer);
-      options.sendSignal({ type: "offer", sdp: offer.sdp });
-    } catch (error) {
-      if (!stopped) options.onError?.(error);
-    }
-  })();
+  };
+
+  enqueue(async () => {
+    await syncSharing();
+    await ensureOffer();
+    publish();
+  });
 
   return {
     acceptSignal,
+    setSharing(enabled: boolean) {
+      if (stopped || sharing === enabled) return;
+      sharing = enabled;
+      enqueue(async () => {
+        publish();
+        await syncSharing();
+        await ensureOffer();
+        publish();
+      });
+    },
+    setRemoteControl(enabled: boolean) {
+      if (stopped || control === enabled) return;
+      control = enabled;
+      window.desktop.setRemoteControl(enabled);
+      publish();
+    },
     stop() {
       stopped = true;
-      track?.stop();
+      sharing = false;
+      control = false;
+      window.desktop.setRemoteControl(false);
+      const current = track;
+      track = null;
+      current?.stop();
       pc.close();
     },
   };
+
+  async function syncSharing(): Promise<void> {
+    if (stopped) return;
+    if (!sharing) {
+      await detachTrack();
+      return;
+    }
+    if (track && track.readyState === "live") return;
+    const plan = await window.desktop.getCapturePlan();
+    if (stopped || !sharing) return;
+    const captured = await acquireScreenTrack(plan);
+    if (stopped || !sharing) {
+      captured.track.stop();
+      return;
+    }
+    const current = captured.track;
+    track = current;
+    current.addEventListener("ended", () => {
+      if (!stopped && sharing && track === current) options.onError?.(new Error("Screen track ended"));
+    });
+    options.onCaptureSource?.(captured.source);
+    await sender.replaceTrack(current);
+    if (stopped || track !== current) return;
+    await configureOutboundVideo(pc, current);
+  }
+
+  async function detachTrack(): Promise<void> {
+    const current = track;
+    track = null;
+    try {
+      await sender.replaceTrack(null);
+    } catch (error) {
+      console.warn("[capture] replaceTrack(null) failed", error);
+    }
+    current?.stop();
+  }
+
+  async function ensureOffer(): Promise<void> {
+    if (stopped || offered) return;
+    const offer = await pc.createOffer();
+    if (stopped || !offer.sdp) return;
+    await pc.setLocalDescription(offer);
+    if (stopped) return;
+    offered = true;
+    options.sendSignal({ type: "offer", sdp: offer.sdp });
+  }
 }
 
 export function startControllerSession(
-  options: SessionOptions & { stage: HTMLElement; video: HTMLVideoElement },
+  options: SessionOptions & {
+    stage: HTMLElement;
+    video: HTMLVideoElement;
+    onSessionState?: (state: SessionState) => void;
+  },
 ): PeerSession {
   const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
   let inputDispose: (() => void) | null = null;
+  let remoteStream: MediaStream | null = null;
+  let sharing = DEFAULT_SHARING_ENABLED;
+  let control = DEFAULT_REMOTE_CONTROL_ENABLED;
   const acceptSignal = createRemoteSignalHandler(pc, "controller", options.sendSignal);
   attachIce(pc, options.sendSignal);
   watchState(pc, options.onConnectionState);
 
+  const applyPolicy = (state: SessionState): void => {
+    sharing = state.sharing;
+    control = state.control;
+    if (!sharing) {
+      // Drop the element so the last frame is not left on screen.
+      options.video.srcObject = null;
+    } else if (remoteStream) {
+      options.video.srcObject = remoteStream;
+      void options.video.play().catch(() => undefined);
+    }
+    options.onSessionState?.(state);
+  };
+
   pc.ontrack = (event) => {
-    const [stream] = event.streams;
-    options.video.srcObject = stream ?? new MediaStream([event.track]);
+    remoteStream = event.streams[0] ?? new MediaStream([event.track]);
+    event.track.addEventListener("unmute", () => {
+      if (!sharing || !remoteStream) return;
+      options.video.srcObject = remoteStream;
+      void options.video.play().catch(() => undefined);
+    });
+    if (!sharing) return;
+    options.video.srcObject = remoteStream;
     void options.video.play().catch(() => undefined);
   };
 
   pc.ondatachannel = (event) => {
     if (event.channel.label !== INPUT_CHANNEL_LABEL) return;
     inputDispose?.();
-    inputDispose = bindControllerInput(event.channel, options.stage, options.video);
+    inputDispose = bindControllerInput(event.channel, options.stage, options.video, () => control, applyPolicy);
   };
 
   return {
@@ -97,6 +213,7 @@ export function startControllerSession(
     stop() {
       inputDispose?.();
       inputDispose = null;
+      remoteStream = null;
       options.video.srcObject = null;
       pc.close();
     },

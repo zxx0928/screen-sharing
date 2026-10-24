@@ -46,7 +46,7 @@ apps/desktop/native/win32/build/Release/screen_sharing_win32.node
 [input] SendInput ready
 ```
 
-5. 在控制端画面上移动鼠标，被控端光标跟着动。单击、滚轮、字母键会作用到被控端当前用户会话。
+5. 被控端勾选「允许远程控制」。之后在控制端画面上移动鼠标，被控端光标才跟着动。单击、滚轮、字母键会作用到被控端当前用户会话。未勾选时不会调用 `SendInput`。主进程在关闭的那一下会打 `[input] remote control off`；若仍有事件漏进主进程，会打 `remote control is off; not calling SendInput`。
 
 插件没编出来时，Windows 退回 Electron `desktopCapturer`（Chromium 自己的 DXGI），状态是「采集：Electron desktopCapturer」。这时**不会**调用 `SendInput`。
 
@@ -85,7 +85,7 @@ KeyboardEvent.code → 设置 1 扫描码（KEYEVENTF_SCANCODE）
 
 DOM 滚轮向下是正的 `deltaY`。Win32 `MOUSEEVENTF_WHEEL` 向上是正的，所以垂直方向取反。大约 100 个像素增量算一格（120）。小于 20 的值按行模式处理。水平滚轮不取反。
 
-会话结束时，主进程会对本会话按下但还没松开的键和键鼠按钮补一次 up，避免断线后 Shift 粘住。
+会话结束时，主进程会对本会话按下但还没松开的键和键鼠按钮补一次 up，避免断线后 Shift 粘住。关掉远程控制时同样补一次 up，这次 up 仍然调用 `SendInput`；之后的新事件在调用之前就被丢掉。
 
 ## H.264 还差什么 / What H.264 still does not do
 
@@ -117,6 +117,7 @@ DOM 滚轮向下是正的 `deltaY`。Win32 `MOUSEEVENTF_WHEEL` 向上是正的�
 | `screen_sharing_win32.node not found` | 在 Windows 上执行 `npm run build:native -w @screen-sharing/desktop` |
 | 换了 Electron 版本后插件加载失败 | 重新 `build:native`。ABI 跟着 Electron，不跟着系统 Node |
 | 状态不是 DXGI | 看主进程里的 `DuplicateOutput failed (0x........)` |
-| 有画面但鼠标不动 | 确认日志里有 `SendInput ready`。没有的话插件没加载，键鼠被丢掉了 |
+| 有画面但鼠标不动 | 先在被控端勾选「允许远程控制」。仍不动再看有没有 `SendInput ready`。没有的话插件没加载，键鼠被丢掉了 |
+| 点了停止共享，控制端还有画面 | 控制端应变成「对方已停止共享」，房间和设备码还在。若画面还在动，看被控端有没有把视频轨 `replaceTrack(null)` |
 | 点击偏到别的屏幕 | 采集几何必须来自 DXGI 的 `DesktopCoordinates`。不要用 Electron `screen.getAllDisplays()` 的 DIP 去乘缩放 |
 | Linux 上 `npm test` 失败 | 不该去编这个插件。测试只跑 TypeScript。把报错贴出来，不要在 Linux 上装 Windows SDK |
