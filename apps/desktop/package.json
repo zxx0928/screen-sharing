@@ -1,0 +1,25 @@
+{
+  "name": "@screen-sharing/desktop",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Electron client that can host or control a 1:1 remote desktop session",
+  "main": "dist/main.js",
+  "scripts": {
+    "predev": "npm run build -w @screen-sharing/protocol",
+    "dev": "node scripts/dev.mjs",
+    "prebuild": "npm run build -w @screen-sharing/protocol",
+    "build": "node scripts/build.mjs",
+    "prestart": "npm run build",
+    "start": "electron .",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@screen-sharing/protocol": "0.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "electron": "^45.0.0",
+    "esbuild": "^0.25.0",
+    "typescript": "~5.9.3"
+  }
+}

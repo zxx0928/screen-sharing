@@ -1,0 +1,28 @@
+{
+  "name": "@screen-sharing/signaling",
+  "version": "0.0.1",
+  "private": true,
+  "description": "In-memory WebSocket signaling for 1:1 device-code rooms",
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "predev": "npm run build -w @screen-sharing/protocol",
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "prestart": "npm run build -w @screen-sharing/protocol && tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "pretest": "npm run build -w @screen-sharing/protocol",
+    "test": "tsx --test src/*.test.ts"
+  },
+  "dependencies": {
+    "@screen-sharing/protocol": "0.0.1",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "@types/ws": "^8.18.0",
+    "tsx": "^4.20.0",
+    "typescript": "~5.9.3"
+  }
+}
