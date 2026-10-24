@@ -7,113 +7,240 @@
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' ws: wss:; media-src 'self' blob:; img-src 'self' data:"
     />
-    <title>屏幕共享</title>
+    <title>小旭连接</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <header class="topbar">
-      <div class="brand">
-        <span class="mark" aria-hidden="true"></span>
-        <div>
-          <strong>屏幕共享</strong>
-          <span>Screen Sharing</span>
+    <div id="shell" class="shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="16" height="16">
+              <circle cx="9" cy="10" r="1.4" fill="#fff" />
+              <circle cx="15" cy="10" r="1.4" fill="#fff" />
+              <path d="M8.2 14.2c1.2 1.6 6.4 1.6 7.6 0" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round" />
+            </svg>
+          </span>
+          <span>小旭连接</span>
         </div>
-      </div>
-      <div class="topbar-meta">
-        <span id="phase-pill">Phase 1</span>
-        <span id="sig-status" class="status connecting">正在连接信令…</span>
-      </div>
-    </header>
+        <div class="mascot-wrap">
+          <img class="mascot" src="./assets/mascot.svg" width="148" height="148" alt="" />
+          <span id="presence-dot" class="presence-dot"></span>
+        </div>
+        <button id="profile" type="button" class="profile" aria-expanded="false" aria-controls="profile-menu">
+          <span>小旭</span>
+          <span class="caret" aria-hidden="true">▾</span>
+        </button>
+        <p id="presence" class="presence">在线</p>
+        <div id="profile-menu" class="profile-menu" hidden>
+          <p id="sig-line"></p>
+        </div>
+        <nav class="nav" aria-label="主导航">
+          <button type="button" class="nav-btn" data-nav="device">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2" /><path d="M8 20h8M12 16v4" /></svg>
+            此设备
+          </button>
+          <button type="button" class="nav-btn" data-nav="devices">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="14" height="10" rx="2" /><path d="M8 19h8M17 9h4v8a2 2 0 0 1-2 2h-2" /></svg>
+            我的设备
+          </button>
+          <button type="button" class="nav-btn" data-nav="history">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" /><path d="M12 8v5l3 2" /></svg>
+            连接记录
+          </button>
+        </nav>
+      </aside>
 
-    <main id="view-home">
-      <section class="card" aria-labelledby="host-heading">
-        <div class="card-head">
-          <h2 id="host-heading">本机设备 <span>This device</span></h2>
-          <button id="copy-code" type="button" class="ghost" disabled>复制设备码</button>
-        </div>
-        <p class="hint">把设备码告诉对方，对方即可连接这台电脑。同一窗口输入自己的设备码也能打通链路。</p>
-        <div id="device-code" class="code" aria-live="polite">
-          <span id="code-a">———</span>
-          <span id="code-b">———</span>
-          <span id="code-c">———</span>
-        </div>
-        <p id="host-peer" class="peer">等待信令</p>
-        <p id="capture-status" class="hint"></p>
-        <div class="share-controls">
-          <button id="share-toggle" type="button" class="ghost" disabled>开始共享</button>
-          <label class="check">
-            <input id="control-enabled" type="checkbox" disabled />
-            允许远程控制 <span>Remote control</span>
-          </label>
-        </div>
-        <p class="hint">控制端连上后默认开始共享。远程控制默认关闭，勾选后这台电脑才会注入键鼠。停止共享不会断开房间。</p>
-
-        <div class="password-row">
-          <label class="check">
-            <input id="pw-enabled" type="checkbox" checked />
-            启用临时密码 <span>Temporary password</span>
-          </label>
-          <button id="copy-password" type="button" class="ghost">复制</button>
-        </div>
-        <div class="password-edit">
-          <input id="pw-value" type="text" maxlength="64" spellcheck="false" autocomplete="off" aria-label="临时密码" />
-          <button id="pw-regen" type="button" class="ghost">换一个</button>
-          <button id="pw-apply" type="button">应用</button>
-        </div>
-        <p id="host-error" class="error" hidden></p>
-      </section>
-
-      <section class="card" aria-labelledby="connect-heading">
-        <h2 id="connect-heading">连接到设备 <span>Connect</span></h2>
-        <p class="hint">输入对方的 9 位设备码。这是一对一远控，不是多人会议。</p>
-        <form id="connect-form">
-          <label>
-            设备码
-            <input
-              id="remote-code"
-              name="code"
-              inputmode="numeric"
-              autocomplete="off"
-              spellcheck="false"
-              placeholder="123 456 789"
-              maxlength="11"
-            />
-          </label>
-          <label>
-            临时密码（可选）
-            <input id="remote-password" name="password" type="text" autocomplete="off" spellcheck="false" maxlength="64" />
-          </label>
-          <button id="connect-btn" type="submit">连接</button>
-          <p id="connect-error" class="error" hidden></p>
-        </form>
-      </section>
-    </main>
-
-    <section id="view-remote" hidden>
-      <div class="session-bar">
-        <div>
-          <strong id="session-title">正在连接</strong>
-          <span id="session-detail"></span>
-          <span id="host-banner" class="banner" hidden>本机也正被控制</span>
-        </div>
-        <div class="session-actions">
-          <span id="remote-share" class="pill">画面：共享中</span>
-          <span id="remote-control" class="pill off">远程控制：关</span>
-          <div id="session-host-controls" class="session-host" hidden>
-            <button id="session-share-toggle" type="button" class="ghost">停止共享</button>
-            <label class="check">
-              <input id="session-control-enabled" type="checkbox" />
-              允许远程控制
-            </label>
+      <main class="content">
+        <section id="view-device">
+          <header class="page-head">
+            <h1>此设备</h1>
+            <p>发给对方就能连你</p>
+          </header>
+          <div class="code-grid">
+            <article class="code-card">
+              <div class="code-label">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" /><path d="M12 8v5l3 1.5" /></svg>
+                <span>临时连接码</span>
+              </div>
+              <p id="device-code" class="code-value" data-pending="true">— — —</p>
+              <div class="code-actions">
+                <button id="copy-code" type="button" class="text-btn" disabled>复制</button>
+                <span class="dot" aria-hidden="true">·</span>
+                <button id="code-rotate" type="button" class="text-btn" disabled>换一个</button>
+              </div>
+            </article>
+            <article class="code-card">
+              <div class="code-label">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 5 6v6c0 4.2 2.8 7.4 7 9 4.2-1.6 7-4.8 7-9V6l-7-3z" /></svg>
+                <span>安全连接码</span>
+              </div>
+              <p id="secure-code" class="code-value">••••••</p>
+              <div id="pw-editor" class="pw-editor" hidden>
+                <input id="pw-value" type="text" maxlength="64" spellcheck="false" autocomplete="off" aria-label="安全连接码" placeholder="输入安全连接码" />
+                <button id="pw-regen" type="button" class="text-btn">换一个</button>
+                <button id="pw-apply" type="button" class="mini">完成</button>
+              </div>
+              <div class="code-actions">
+                <button id="secure-reveal" type="button" class="text-btn">显示</button>
+                <span class="dot" aria-hidden="true">·</span>
+                <button id="pw-edit" type="button" class="text-btn">改密码</button>
+              </div>
+            </article>
           </div>
-          <button id="disconnect-btn" type="button" class="danger">断开</button>
+          <p id="host-error" class="form-error" hidden></p>
+
+          <section class="connect-block" aria-labelledby="connect-heading">
+            <h2 id="connect-heading">连小旭的电脑</h2>
+            <form id="connect-form" class="connect-form">
+              <label class="connect-field">
+                <span class="sr-only">对方的设备码或连接码</span>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2" /><path d="M8 20h8M12 16v4" /></svg>
+                <input
+                  id="remote-code"
+                  name="code"
+                  inputmode="text"
+                  autocomplete="off"
+                  spellcheck="false"
+                  placeholder="输入对方的设备码或连接码"
+                  aria-describedby="connect-hint"
+                  maxlength="80"
+                />
+              </label>
+              <button id="connect-btn" type="submit">连接</button>
+            </form>
+            <p id="connect-hint" class="sr-only">可在 9 位设备码后面空一格，写上对方的安全连接码。</p>
+            <p id="connect-error" class="form-error" hidden></p>
+          </section>
+        </section>
+
+        <section id="view-devices" hidden>
+          <header class="page-head">
+            <h1>我的设备</h1>
+            <p>绑定过的电脑都在这儿</p>
+          </header>
+          <div class="empty-card">还没有别的设备</div>
+        </section>
+
+        <section id="view-history" hidden>
+          <header class="page-head">
+            <h1>连接记录</h1>
+            <p>最近帮过谁一眼能看清</p>
+          </header>
+          <div id="history-empty" class="empty-card">连过的人会出现在这里</div>
+          <div id="history-list" class="list" hidden></div>
+        </section>
+
+        <section id="view-connecting" class="center-wrap" hidden>
+          <div class="panel">
+            <div class="link-art" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="12" rx="2" /><path d="M8 21h8M12 17v4" /></svg>
+              <span class="hearts">♥ ♥</span>
+              <svg viewBox="0 0 24 24"><rect x="8" y="3" width="8" height="18" rx="2" /><path d="M11 18h2" /></svg>
+            </div>
+            <h2>正在连小旭的电脑...</h2>
+            <div class="dots" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+            <p class="wait"><span class="hearts">♥</span> 等对方点一下就好</p>
+            <button id="cancel-connect" type="button" class="beige-btn block">取消</button>
+          </div>
+        </section>
+
+        <section id="view-disconnected" class="center-wrap" hidden>
+          <div class="panel">
+            <div class="badge" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <circle cx="8" cy="12" r="3.1" />
+                <circle cx="16.2" cy="12" r="3.1" />
+                <path d="M11 12h2.2" />
+              </svg>
+            </div>
+            <h2>已断开</h2>
+            <p class="wait">这次帮完啦，随时再连</p>
+            <div class="end-actions">
+              <button id="back-home" type="button" class="accent-btn">回到首页 →</button>
+              <button id="view-history-btn" type="button" class="coral-link">查看连接记录 ›</button>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div id="auth-modal" class="modal" hidden>
+      <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+        <img src="./assets/mascot.png" alt="" />
+        <h2 id="auth-title">小旭想用一下你的电脑</h2>
+        <p>随时能断开</p>
+        <div class="auth-actions">
+          <button id="auth-yes" type="button" class="hot">好呀</button>
+          <button id="auth-look" type="button" class="ghost-hot">先看一眼</button>
+          <button id="auth-later" type="button" class="beige-btn">下次吧</button>
         </div>
+      </div>
+    </div>
+
+    <section id="view-guest" class="takeover guest" hidden>
+      <div class="takeover-bar">
+        <img src="./assets/mascot.png" alt="" />
+        <div class="bar-copy">
+          <strong>小旭正在用你电脑</strong>
+          <span class="sub">随时能断开</span>
+        </div>
+        <button id="guest-disconnect" type="button" class="hot">断开</button>
+      </div>
+      <div class="guest-controls">
+        <button id="share-toggle" type="button" class="quiet" disabled>开始共享</button>
+        <label class="check">
+          <input id="control-enabled" type="checkbox" disabled />
+          允许远程控制
+        </label>
+        <span id="capture-status" class="capture-line"></span>
+      </div>
+    </section>
+
+    <section id="view-controller" class="takeover controller" hidden>
+      <div class="takeover-bar">
+        <img src="./assets/mascot.png" alt="" />
+        <div class="bar-copy">
+          <strong id="session-title">正在帮小旭 · 可控制</strong>
+        </div>
+        <div id="session-host-controls" class="host-cluster" hidden>
+          <button id="session-share-toggle" type="button" class="quiet">停止共享</button>
+          <label class="check">
+            <input id="session-control-enabled" type="checkbox" />
+            允许远程控制
+          </label>
+          <span id="session-capture" class="capture-line"></span>
+        </div>
+        <button id="disconnect-btn" type="button" class="hot">断开</button>
       </div>
       <div id="stage" class="stage" tabindex="0">
         <video id="remote-video" autoplay muted playsinline></video>
         <div id="stage-placeholder">等待对方画面…</div>
       </div>
-      <p class="hint input-hint">远程控制默认关闭。被控端勾选「允许远程控制」后，键鼠才经 DataChannel 注入对方。</p>
+      <div class="toolbar" role="toolbar" aria-label="主控">
+        <button id="tool-mouse" type="button" class="tool" aria-pressed="true">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3l6 18 2.2-7.2L20 11z" /></svg>
+          鼠标
+        </button>
+        <button id="tool-keyboard" type="button" class="tool" aria-pressed="true">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2" /><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8" /></svg>
+          键盘
+        </button>
+        <button id="tool-fullscreen" type="button" class="tool" aria-pressed="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg>
+          全屏
+        </button>
+        <div class="tool-wrap">
+          <button id="tool-quality" type="button" class="tool" aria-expanded="false" aria-controls="quality-pop">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3 16l5-4 4 3 3-2 6 4" /></svg>
+            画质
+          </button>
+          <div id="quality-pop" class="quality-pop" hidden>
+            <strong>画质</strong>
+            <p>自动，跟随对方采集。这一版不能在这边改码率。</p>
+          </div>
+        </div>
+      </div>
     </section>
 
     <script src="./renderer.js"></script>

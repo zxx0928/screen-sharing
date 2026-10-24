@@ -1,6 +1,6 @@
 # screen-sharing
 
-屏幕共享。一对一远程桌面骨架，形态接近 ToDesk / 向日葵：被控端展示设备码和可选临时密码，控制端输入设备码发起连接。不是多人会议。
+屏幕共享。一对一远程桌面骨架，形态接近 ToDesk / 向日葵：被控端展示设备码和可选临时密码，控制端输入设备码发起连接。不是多人会议。客户端界面叫「小旭连接」。
 
 Phase-1 skeleton for a 1:1 remote desktop, in the shape of ToDesk / Sunflower. The controlled host shows a device code and an optional temporary password; the controller types that code to connect. This is not a multi-party meeting.
 
@@ -100,7 +100,7 @@ npm run typecheck
 npm run build:native -w @screen-sharing/desktop
 ```
 
-4. `npm run dev`。被控端连上后默认开始共享，状态应显示「采集：DXGI Desktop Duplication（H.264）」。同步编码器打不开时退回不带 H.264 的 DXGI 状态，画面走 JPEG。远程控制默认关闭。被控端勾选「允许远程控制」后，控制端在画面里移动鼠标，被控端光标才会跟着走。
+4. `npm run dev`。被控端点「好呀」或「先看一眼」后开始共享，状态应显示「采集：DXGI Desktop Duplication（H.264）」。同步编码器打不开时退回不带 H.264 的 DXGI 状态，画面走 JPEG。远程控制默认关闭；「好呀」或之后勾选「允许远程控制」后，控制端在画面里移动鼠标，被控端光标才会跟着走。
 
 原生插件只在 `win32` 上编译。Linux 上 `npm test` 和 `npm run typecheck` 会跳过它，用来守住坐标映射、扫描码和采集计划。
 
@@ -108,9 +108,9 @@ The native addon builds on win32 only. Linux still runs `npm test` and `npm run 
 
 ### 本地怎么试一条会话
 
-1. 启动 `npm run dev`，窗口左侧会出现 9 位设备码和临时密码。
-2. 再开一个客户端（另一个终端执行 `npm run dev:desktop`），或在**同一个窗口**右侧输入自己的设备码和密码，点连接。
-3. Windows 上装好原生插件后，右侧是 DXGI 画面。被控端默认开始共享。远程控制默认关闭，被控端勾选「允许远程控制」后，鼠标和键盘才会通过 `SendInput` 作用到被控端。被控端点「停止共享」后，控制端不再显示画面，设备码房间和 WebRTC 连接保持，可以再点「开始共享」。插件还没编出来时，Windows 会退回 Electron 的 desktopCapturer；其他系统仍用 `getDisplayMedia`。两者都失败时才是占位画面。
+1. 启动 `npm run dev`。窗口是「小旭连接」：临时连接码是 9 位设备码，安全连接码是临时密码（默认开启，点「显示」查看）。
+2. 再开一个客户端（另一个终端执行 `npm run dev:desktop`），或在**同一个窗口**的「连小旭的电脑」里输入自己的设备码。密码写在设备码后面，用空格或 `/` 隔开，例如 `123 456 789 AbC123`。
+3. 被控端弹出「好呀 / 先看一眼 / 下次吧」。好呀会允许远程控制，先看一眼只共享画面。Windows 上装好原生插件后，主控端看到 DXGI 画面。被控端可「停止共享」，房间和 WebRTC 不断开，可以再「开始共享」。远程控制仍由被控端的「允许远程控制」决定。插件还没编出来时，Windows 会退回 Electron 的 desktopCapturer；其他系统仍用 `getDisplayMedia`。两者都失败时才是占位画面。
 
 Linux 上没有 `.node` 插件，主进程会打一行 `[input] win32 addon not loaded; not calling SendInput`，并且不会去调系统输入。
 
@@ -141,7 +141,7 @@ Linux 上没有 `.node` 插件，主进程会打一行 `[input] win32 addon not 
 
 - 可运行的单体仓库和中英说明
 - 内存设备码房间：创建、加入、临时密码、SDP/ICE 转发、离开、断线
-- Electron 界面：本机设备码、输入设备码连接、远端画面、断开
+- Electron 界面：小旭连接（此设备 / 我的设备 / 连接记录）、授权、主控底栏、被控断开、已断开
 - Windows DXGI Desktop Duplication：主进程拿到 BGRA 帧，用同步 Media Foundation H.264 MFT 编成 Annex-B。渲染进程用 WebCodecs 画到 canvas，再交给 WebRTC。编码器打不开时退回 WIC JPEG
 - Windows `SendInput`：扫描码键盘、虚拟屏幕绝对坐标的鼠标、滚轮方向已按 DOM 约定转换。远程控制默认关闭，被控端允许后才注入
 - 被控端可单独开始/停止共享。停止后控制端不再收画面，房间和连接不断开
