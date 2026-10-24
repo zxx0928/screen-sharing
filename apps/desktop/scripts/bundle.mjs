@@ -53,6 +53,10 @@ export function copyStatic() {
   for (const file of ["index.html", "styles.css"]) {
     fs.copyFileSync(path.join(appRoot, "src/renderer", file), path.join(rendererDist, file));
   }
+  const assets = path.join(appRoot, "src/renderer/assets");
+  if (fs.existsSync(assets)) {
+    fs.cpSync(assets, path.join(rendererDist, "assets"), { recursive: true });
+  }
   const addon = path.join(appRoot, "native", "win32", "build", "Release", "screen_sharing_win32.node");
   if (fs.existsSync(addon)) {
     fs.copyFileSync(addon, path.join(distDir, "screen_sharing_win32.node"));

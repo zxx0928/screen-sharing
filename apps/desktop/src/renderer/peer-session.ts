@@ -166,6 +166,9 @@ export function startControllerSession(
     stage: HTMLElement;
     video: HTMLVideoElement;
     onSessionState?: (state: SessionState) => void;
+    /** Controller-side toolbar. Both default to on; the host gate still wins. */
+    localMouse?: () => boolean;
+    localKeyboard?: () => boolean;
   },
 ): PeerSession {
   const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
@@ -205,7 +208,17 @@ export function startControllerSession(
   pc.ondatachannel = (event) => {
     if (event.channel.label !== INPUT_CHANNEL_LABEL) return;
     inputDispose?.();
-    inputDispose = bindControllerInput(event.channel, options.stage, options.video, () => control, applyPolicy);
+    inputDispose = bindControllerInput(
+      event.channel,
+      options.stage,
+      options.video,
+      {
+        remoteControl: () => control,
+        mouse: () => options.localMouse?.() ?? true,
+        keyboard: () => options.localKeyboard?.() ?? true,
+      },
+      applyPolicy,
+    );
   };
 
   return {

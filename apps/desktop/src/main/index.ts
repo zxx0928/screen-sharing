@@ -22,7 +22,7 @@ import { IpcChannel } from "../shared/ipc";
 
 const DEFAULT_SIGNALING_URL = "ws://127.0.0.1:8787";
 
-app.setName("屏幕共享");
+app.setName("小旭连接");
 
 app.whenReady().then(() => {
   installDisplayMediaFallback();
@@ -84,12 +84,13 @@ function registerIpc(): void {
 function createWindow(): void {
   const win = new BrowserWindow({
     width: 1080,
-    height: 760,
-    minWidth: 880,
+    height: 720,
+    minWidth: 960,
     minHeight: 640,
     show: false,
-    title: "屏幕共享",
-    backgroundColor: "#101418",
+    title: "小旭连接",
+    backgroundColor: "#F7F1E8",
+    roundedCorners: true,
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -119,6 +120,7 @@ function createWindow(): void {
   const shotPath = process.env.SCREEN_SHARING_SHOT;
   if (shotPath) {
     win.webContents.once("did-finish-load", () => {
+      const delay = process.env.SCREEN_SHARING_PREVIEW ? 1200 : 700;
       setTimeout(() => {
         win.webContents
           .capturePage()
@@ -129,7 +131,7 @@ function createWindow(): void {
           .catch((error: unknown) => {
             console.error("[desktop] screenshot failed", error);
           });
-      }, 700);
+      }, delay);
     });
   }
 
@@ -137,5 +139,6 @@ function createWindow(): void {
     console.log(`[desktop] window ready ${win.webContents.getURL()}`);
   });
 
-  void win.loadFile(pageFile);
+  const preview = process.env.SCREEN_SHARING_PREVIEW;
+  void win.loadFile(pageFile, preview ? { query: { preview } } : undefined);
 }

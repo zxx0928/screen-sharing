@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" fill="none">
+  <!-- soft shadow -->
+  <ellipse cx="100" cy="178" rx="52" ry="10" fill="#E8D9C8" opacity="0.55"/>
+  <!-- body -->
+  <circle cx="100" cy="108" r="68" fill="#F5E6D3"/>
+  <!-- left ear -->
+  <ellipse cx="48" cy="58" rx="18" ry="22" fill="#F5E6D3" transform="rotate(-18 48 58)"/>
+  <ellipse cx="50" cy="60" rx="10" ry="12" fill="#F0C9B0" transform="rotate(-18 50 60)" opacity="0.7"/>
+  <!-- right ear -->
+  <ellipse cx="152" cy="58" rx="18" ry="22" fill="#F5E6D3" transform="rotate(18 152 58)"/>
+  <ellipse cx="150" cy="60" rx="10" ry="12" fill="#F0C9B0" transform="rotate(18 150 60)" opacity="0.7"/>
+  <!-- tiny head curl / tuft -->
+  <path d="M100 42 C98 28 108 22 112 30 C116 22 124 28 118 40" stroke="#E8C4A8" stroke-width="6" stroke-linecap="round" fill="none"/>
+  <!-- cheeks blush -->
+  <ellipse cx="62" cy="118" rx="14" ry="9" fill="#F5B8A8" opacity="0.55"/>
+  <ellipse cx="138" cy="118" rx="14" ry="9" fill="#F5B8A8" opacity="0.55"/>
+  <!-- eyes -->
+  <ellipse cx="78" cy="102" rx="7" ry="9" fill="#4A3728"/>
+  <ellipse cx="122" cy="102" rx="7" ry="9" fill="#4A3728"/>
+  <circle cx="80" cy="99" r="2.2" fill="#FFF"/>
+  <circle cx="124" cy="99" r="2.2" fill="#FFF"/>
+  <!-- smile -->
+  <path d="M86 128 Q100 142 114 128" stroke="#4A3728" stroke-width="4" stroke-linecap="round" fill="none"/>
+  <!-- tiny tail peeking right -->
+  <path d="M164 130 Q186 138 178 158" stroke="#E8C4A8" stroke-width="10" stroke-linecap="round" fill="none"/>
+  <path d="M164 130 Q186 138 178 158" stroke="#F5E6D3" stroke-width="6" stroke-linecap="round" fill="none"/>
+</svg>

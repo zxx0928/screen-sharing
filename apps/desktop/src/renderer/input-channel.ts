@@ -42,6 +42,13 @@ export function bindHostInputChannel(
   };
 }
 
+/** Local gates on top of the host's remote-control permission. They do not change the wire protocol. */
+export type ControllerInputPolicy = {
+  remoteControl: () => boolean;
+  mouse: () => boolean;
+  keyboard: () => boolean;
+};
+
 /**
  * Controller side: pointer and keyboard on the remote stage become input events.
  * Listeners are removed when the returned function runs.
@@ -50,14 +57,22 @@ export function bindControllerInput(
   channel: RTCDataChannel,
   stage: HTMLElement,
   video: HTMLVideoElement,
-  controlEnabled: () => boolean,
+  policy: ControllerInputPolicy,
   onSessionState: (state: SessionState) => void,
 ): () => void {
   const held = new Set<"left" | "right" | "middle">();
 
   const send = (input: InputEvent): void => {
-    if (!controlEnabled()) return;
+    if (!policy.remoteControl()) return;
     if (channel.readyState !== "open") return;
+    // Button-up and key-up still go out so a gate toggled mid-press does not stick.
+    if (input.type === "key") {
+      if (!policy.keyboard() && input.action === "down") return;
+    } else if (input.type === "mouse-button") {
+      if (!policy.mouse() && input.action === "down") return;
+    } else if (!policy.mouse()) {
+      return;
+    }
     channel.send(JSON.stringify(input));
   };
 
@@ -91,7 +106,7 @@ export function bindControllerInput(
     if (!button) return;
     stage.focus();
     event.preventDefault();
-    if (!controlEnabled()) return;
+    if (!policy.remoteControl() || !policy.mouse()) return;
     const point = normalizedPoint(video, event.clientX, event.clientY);
     if (!point) return;
     held.add(button);
