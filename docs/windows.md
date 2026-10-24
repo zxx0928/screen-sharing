@@ -37,11 +37,11 @@ apps/desktop/native/win32/build/Release/screen_sharing_win32.node
 
 1. 被控端窗口出现 9 位设备码。
 2. 控制端输入设备码（同一台机器开第二个窗口即可）。
-3. 被控端状态变成「采集：DXGI Desktop Duplication」。
+3. 被控端状态变成「采集：DXGI Desktop Duplication（H.264）」。同步 H.264 编码器打不开时，状态是「采集：DXGI Desktop Duplication」，画面改走 JPEG。
 4. 主进程日志里有类似一行：
 
 ```
-[capture] DXGI 1920x1080 → jpeg 1920x1080; next encoder media-foundation-h264-mft baseline 8000000bps
+[capture] DXGI 1920x1080 → h264 1920x1080 (Microsoft H264 Video Encoder); fallback wic-jpeg-ipc-canvas
 [capture] h264 mft N encoder(s), M hardware
 [input] SendInput ready
 ```
@@ -55,14 +55,22 @@ apps/desktop/native/win32/build/Release/screen_sharing_win32.node
 ```
 IDXGIOutputDuplication::AcquireNextFrame
   → ID3D11Texture2D (BGRA)
-  → staging Map
+  → staging Map，复制到 CPU，立刻 Unmap 并 ReleaseFrame
   → 宽边超过 1920 时最近邻缩小到偶数尺寸
-  → Windows Imaging Component JPEG
+  → CPU BGRA 转 NV12（BT.601 studio）
+  → 同步 Media Foundation H.264 MFT（CBR 8 Mbps，GOP 60，baseline，低延迟）
+  → Annex-B（关键帧补 SPS/PPS）
   → IPC
-  → 渲染进程 canvas
+  → 渲染进程 WebCodecs VideoDecoder
   → canvas.captureStream
   → RTCRtpSender（maxBitrate 8 Mbps，maxFramerate 30）
 ```
+
+编码器 `Open` 失败时，状态不会带「H.264」，画面从第一帧起就是 JPEG。采集启动本身不会因为没有 H.264 MFT 而失败。Windows N 上经常没有软件 H.264 编码器。
+
+如果编码器中途失败（连续 8 帧只有 `NeedMore`，或 `ProcessInput` 失败），状态文字仍保持启动时的 H.264，这一帧和之后的帧改用 WIC JPEG，沿同一条 IPC 画到同一块 canvas。
+
+硬件编码器多数是异步 MFT（`IMFMediaEventGenerator`）。这一步只激活 `MFT_ENUM_FLAG_SYNCMFT`，所以采集线程不用事件循环。`probeH264()` 仍会把硬件编码器列在日志里。
 
 键鼠不走这条图像路径。控制端把 `InputEvent` 发到 DataChannel `input`，preload 转到主进程：
 
@@ -79,18 +87,18 @@ DOM 滚轮向下是正的 `deltaY`。Win32 `MOUSEEVENTF_WHEEL` 向上是正的�
 
 会话结束时，主进程会对本会话按下但还没松开的键和键鼠按钮补一次 up，避免断线后 Shift 粘住。
 
-## H.264 下一步 / H.264 next step
+## H.264 还差什么 / What H.264 still does not do
 
-现在的 JPEG 是预览桥，不是最终码流。Chromium 会再编码一次 canvas。主进程里的 `probeH264()` 已经调用 `MFStartup` 和 `MFTEnumEx`，列出本机 H.264 编码器（含是否硬件），但还没有 `ProcessInput`。
+同步 MFT 已经在采集线程里调用 `ProcessInput`。码流是 Annex-B。渲染进程用 WebCodecs 解到 canvas，Chromium 再编码一次 WebRTC。这不是最终的 GPU 直通。
 
-下一步在 `describeCapturePipeline()`（`apps/desktop/src/main/h264-plan.ts`）里写死了，实现时按这个做：
+下一步在 `describeCapturePipeline()`（`apps/desktop/src/main/h264-plan.ts`）里：
 
 1. 采集到的 `ID3D11Texture2D` 留在 GPU 上，编码路径不要 `Map()`。
 2. 同一台 D3D11 设备上用 `ID3D11VideoProcessor` 把 BGRA 转成 NV12。
-3. 优先用 `probeH264()` 返回的硬件 MFT，否则用软件 CMS H.264 MFT。
-4. CBR，`AVEncCommonMeanBitRate = 8000000`，`CODECAPI_AVEncMPVGOPSize = 60`，`MF_MT_FRAME_RATE = 30/1`，profile `eAVEncH264VProfile_Base`。
-5. 取出 `IMFSample`，每个 IDR 前带上 SPS/PPS，输出 Annex-B（`00 00 00 01` + NAL）。
-6. 沿现有帧通道把访问单元送到渲染进程，替换 JPEG canvas 轨。在那之前，WebRTC 仍由 Chromium 的 `RTCRtpSender` 编码。
+3. 用 `probeH264()` 选中的异步硬件 MFT 替换现在的同步软件 MFT。
+4. 把 Annex-B 直接送进 WebRTC RTP，不再先解码到 canvas。
+
+码率、GOP、profile 已经按这个计划设在编码器上：CBR，`AVEncCommonMeanBitRate = 8000000`，`CODECAPI_AVEncMPVGOPSize = 60`，`MF_MT_FRAME_RATE = 30/1`，`eAVEncH264VProfile_Base`。关键帧会带 SPS/PPS。
 
 ## 限制 / Limits
 
@@ -98,7 +106,7 @@ DOM 滚轮向下是正的 `deltaY`。Win32 `MOUSEEVENTF_WHEEL` 向上是正的�
 - 光标不画进 DXGI 帧里。控制端用自己的鼠标盖在画面上。
 - 插件必须跑在交互式用户会话里。Session 0、服务进程、UAC 安全桌面拿不到 Desktop Duplication，也注入不进更高完整性的窗口。
 - 另一路程序占满 duplication 时，`DuplicateOutput` 会失败（常见 `DXGI_ERROR_NOT_CURRENTLY_AVAILABLE` 或 `E_ACCESSDENIED`）。日志里有 HRESULT。失败后会退回 Electron desktopCapturer，再失败才用 `getDisplayMedia`。
-- JPEG 宽边最大 1920，只为了 IPC。注入用的是输出的真实像素尺寸，不是 JPEG 尺寸。
+- 帧宽边最大 1920，H.264 和 JPEG 都用这个偶数尺寸。注入用的是输出的真实像素尺寸，不是缩放后的帧尺寸。
 - 远程桌面进到这台被控机器时，控制台会话的 DXGI 可能是黑的或直接失败。在本机登录的会话里跑被控端。
 
 ## 排错 / Troubleshooting

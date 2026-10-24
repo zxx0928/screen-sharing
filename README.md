@@ -100,7 +100,7 @@ npm run typecheck
 npm run build:native -w @screen-sharing/desktop
 ```
 
-4. `npm run dev`。被控端连上后，状态应显示「采集：DXGI Desktop Duplication」。控制端在画面里移动鼠标，被控端光标会跟着走。
+4. `npm run dev`。被控端连上后，状态应显示「采集：DXGI Desktop Duplication（H.264）」。同步编码器打不开时退回不带 H.264 的 DXGI 状态，画面走 JPEG。控制端在画面里移动鼠标，被控端光标会跟着走。
 
 原生插件只在 `win32` 上编译。Linux 上 `npm test` 和 `npm run typecheck` 会跳过它，用来守住坐标映射、扫描码和采集计划。
 
@@ -139,13 +139,13 @@ Linux 上没有 `.node` 插件，主进程会打一行 `[input] win32 addon not 
 - 可运行的单体仓库和中英说明
 - 内存设备码房间：创建、加入、临时密码、SDP/ICE 转发、离开、断线
 - Electron 界面：本机设备码、输入设备码连接、远端画面、断开
-- Windows DXGI Desktop Duplication：主进程拿到 BGRA 帧，用 WIC 编成 JPEG，渲染进程画到 canvas，再交给 WebRTC
+- Windows DXGI Desktop Duplication：主进程拿到 BGRA 帧，用同步 Media Foundation H.264 MFT 编成 Annex-B。渲染进程用 WebCodecs 画到 canvas，再交给 WebRTC。编码器打不开时退回 WIC JPEG
 - Windows `SendInput`：扫描码键盘、虚拟屏幕绝对坐标的鼠标、滚轮方向已按 DOM 约定转换
 - 其它平台仍可用 `getDisplayMedia` 或占位画面把会话跑起来
 
 现在没有：
 
-- 主进程里的 Media Foundation H.264 编码（插件会枚举编码器，帧仍经 JPEG 预览后由 Chromium 编码）。下一步写在 [docs/windows.md](docs/windows.md)
+- 把 H.264 留在 GPU 上，并用硬件异步 MFT 直接送进 RTP。现在仍会解码到 canvas，由 Chromium 再编码一次。下一步写在 [docs/windows.md](docs/windows.md)
 - macOS
 - TURN / coturn（跨网穿透）
 - 账号、设备码防爆破、密码哈希、房间持久化
@@ -160,7 +160,7 @@ Linux 上没有 `.node` 插件，主进程会打一行 `[input] win32 addon not 
 | --- | --- | --- |
 | DXGI 采集 | `apps/desktop/native/win32`、`src/main/dxgi-host.ts` | 已接上。渲染进程开了沙箱，不能加载 `.node` |
 | `SendInput` | `src/main/input-injection.ts`、`native/win32/src/send_input.cc` | 已接上。DataChannel 的 `InputEvent` 经 preload 进主进程 |
-| H.264 | `src/main/h264-plan.ts`、`native/win32/src/mf_probe.cc` | 当前是 JPEG 预览 + Chromium 编码。下一步是 NV12 + Media Foundation H.264 |
+| H.264 | `native/win32/src/h264_encoder.cc`、`src/renderer/h264-preview.ts` | 同步 MFT 已接上。下一步是 GPU NV12 和不再二次编码的 RTP |
 | `TODO(turn)` | `apps/desktop/src/renderer/peer-session.ts` | 自建 coturn。不要把长期凭证提交进仓库 |
 | `TODO(macos)` | `capture-plan.ts`、`input-injection.ts` | 以后的 ScreenCaptureKit 和 CGEvent |
 

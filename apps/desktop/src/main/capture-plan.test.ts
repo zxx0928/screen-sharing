@@ -35,20 +35,24 @@ test("jpeg frame size stays even and matches the documented examples", () => {
   assert.equal(fitEvenFrame(1, 1080, 1920), null);
 });
 
-test("H.264 next step is an explicit Media Foundation plan, not a placeholder comment", () => {
+test("H.264 encode is the current path and the GPU RTP step stays explicit", () => {
   const pipeline = describeCapturePipeline();
   assert.equal(pipeline.current.capture, "IDXGIOutputDuplication");
   assert.equal(pipeline.current.pixelFormat, "BGRA8");
-  assert.equal(pipeline.current.frameTransport, "wic-jpeg-ipc-canvas");
+  assert.equal(pipeline.current.encode, "media-foundation-h264-mft-sync");
+  assert.equal(pipeline.current.bitstream, "annex-b");
+  assert.equal(pipeline.current.preview, "webcodecs-videodecoder-canvas");
+  assert.equal(pipeline.current.fallback, "wic-jpeg-ipc-canvas");
   assert.equal(pipeline.current.webrtcEncode, "chromium-rtc-rtp-sender");
-  assert.equal(pipeline.next.encoder, "media-foundation-h264-mft");
+  assert.equal(pipeline.current.profile, "baseline");
+  assert.equal(pipeline.current.rateControl, "CBR");
+  assert.equal(pipeline.current.maxBitrate, 8_000_000);
+  assert.equal(pipeline.current.maxFramerate, 30);
+  assert.equal(pipeline.current.gopLength, 60);
+  assert.equal(pipeline.next.encoder, "media-foundation-h264-mft-async-hardware");
   assert.equal(pipeline.next.pixelFormat, "NV12");
-  assert.equal(pipeline.next.profile, "baseline");
-  assert.equal(pipeline.next.rateControl, "CBR");
-  assert.equal(pipeline.next.bitstream, "annex-b");
-  assert.equal(pipeline.next.bitrate, 8_000_000);
-  assert.equal(pipeline.next.frameRate, 30);
-  assert.equal(pipeline.next.gopLength, 60);
+  assert.equal(pipeline.next.colorConvert, "ID3D11VideoProcessor");
+  assert.equal(pipeline.next.delivery, "rtp-without-reencode");
   assert.ok(pipeline.next.steps.length >= 6);
   assert.match(pipeline.next.steps.join("\n"), /ID3D11VideoProcessor/);
   assert.match(pipeline.next.steps.join("\n"), /Annex-B/);

@@ -27,6 +27,7 @@ const CAPTURE_TEXT: Record<CaptureSource, string> = {
   placeholder: "采集：占位画面（当前没有屏幕轨）",
   "electron-desktop": "采集：Electron desktopCapturer（Chromium DXGI）",
   dxgi: "采集：DXGI Desktop Duplication",
+  "dxgi-h264": "采集：DXGI Desktop Duplication（H.264）",
 };
 
 const state = {

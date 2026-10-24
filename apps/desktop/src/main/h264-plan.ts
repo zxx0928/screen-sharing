@@ -1,9 +1,9 @@
 import { DXGI_MAX_FRAME_WIDTH } from "./frame-size";
 
 /**
- * What the host encodes today, and the Media Foundation H.264 step that
- * replaces the JPEG bridge. `probeH264()` in the Win32 addon already
- * enumerates these MFTs; it does not feed them samples yet.
+ * What the host encodes today, and the GPU / RTP step that replaces the
+ * canvas round trip. The Win32 addon feeds a synchronous H.264 MFT when
+ * one activates. JPEG remains the fallback when that open or encode fails.
  *
  * The renderer imports this module for the outbound bitrate. Keep it free
  * of Node and native imports.
@@ -16,32 +16,34 @@ export type CapturePipeline = {
   current: {
     capture: "IDXGIOutputDuplication";
     pixelFormat: "BGRA8";
-    frameTransport: "wic-jpeg-ipc-canvas";
+    encode: "media-foundation-h264-mft-sync";
+    bitstream: "annex-b";
+    preview: "webcodecs-videodecoder-canvas";
+    fallback: "wic-jpeg-ipc-canvas";
     webrtcEncode: "chromium-rtc-rtp-sender";
+    profile: "baseline";
+    rateControl: "CBR";
     maxFrameWidth: number;
     maxBitrate: number;
     maxFramerate: number;
+    gopLength: number;
   };
   next: {
-    encoder: "media-foundation-h264-mft";
+    encoder: "media-foundation-h264-mft-async-hardware";
     pixelFormat: "NV12";
-    bitrate: number;
-    frameRate: number;
-    gopLength: number;
-    profile: "baseline";
-    rateControl: "CBR";
-    bitstream: "annex-b";
+    colorConvert: "ID3D11VideoProcessor";
+    delivery: "rtp-without-reencode";
     steps: readonly string[];
   };
 };
 
 export const H264_NEXT_STEPS = [
-  "Keep the captured ID3D11Texture2D on the GPU. Do not Map() it for the encoder path.",
+  "Keep the captured ID3D11Texture2D on the GPU. The current encoder Map()s BGRA and converts to NV12 on the CPU.",
   "Convert BGRA to NV12 with ID3D11VideoProcessor (or a VideoProcessorBlt) on the same D3D11 device.",
-  "Pick the first hardware encoder from probeH264(); otherwise the software CMS H.264 MFT.",
-  "Set AVEncCommonRateControlMode to CBR, AVEncCommonMeanBitRate to 8000000, CODECAPI_AVEncMPVGOPSize to 60, MF_MT_FRAME_RATE to 30/1, and eAVEncH264VProfile_Base.",
-  "Pull IMFSamples, prepend each IDR with SPS/PPS, and emit Annex-B (00 00 00 01 + NAL).",
-  "Deliver those access units to the renderer on the existing frame port and replace the JPEG canvas track. Until that lands, Chromium's RTCRtpSender encodes the canvas.",
+  "Replace the synchronous MFT with an asynchronous hardware MFT (IMFMediaEventGenerator) chosen from probeH264().",
+  "Keep CBR, AVEncCommonMeanBitRate 8000000, CODECAPI_AVEncMPVGOPSize 60, MF_MT_FRAME_RATE 30/1, and eAVEncH264VProfile_Base.",
+  "Pull IMFSamples, prepend each IDR with SPS/PPS, and keep emitting Annex-B (00 00 00 01 + NAL).",
+  "Insert those access units into the WebRTC RTP sender. Until that lands, the renderer decodes Annex-B with WebCodecs, draws a canvas, and Chromium encodes the canvas again.",
 ] as const;
 
 export function describeCapturePipeline(): CapturePipeline {
@@ -49,21 +51,23 @@ export function describeCapturePipeline(): CapturePipeline {
     current: {
       capture: "IDXGIOutputDuplication",
       pixelFormat: "BGRA8",
-      frameTransport: "wic-jpeg-ipc-canvas",
+      encode: "media-foundation-h264-mft-sync",
+      bitstream: "annex-b",
+      preview: "webcodecs-videodecoder-canvas",
+      fallback: "wic-jpeg-ipc-canvas",
       webrtcEncode: "chromium-rtc-rtp-sender",
+      profile: "baseline",
+      rateControl: "CBR",
       maxFrameWidth: DXGI_MAX_FRAME_WIDTH,
       maxBitrate: OUTBOUND_VIDEO_BITRATE,
       maxFramerate: OUTBOUND_VIDEO_FRAMERATE,
+      gopLength: H264_GOP_LENGTH,
     },
     next: {
-      encoder: "media-foundation-h264-mft",
+      encoder: "media-foundation-h264-mft-async-hardware",
       pixelFormat: "NV12",
-      bitrate: OUTBOUND_VIDEO_BITRATE,
-      frameRate: OUTBOUND_VIDEO_FRAMERATE,
-      gopLength: H264_GOP_LENGTH,
-      profile: "baseline",
-      rateControl: "CBR",
-      bitstream: "annex-b",
+      colorConvert: "ID3D11VideoProcessor",
+      delivery: "rtp-without-reencode",
       steps: H264_NEXT_STEPS,
     },
   };

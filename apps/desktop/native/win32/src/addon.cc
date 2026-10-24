@@ -87,6 +87,8 @@ napi_value StartCaptureImpl(napi_env env, napi_callback_info info) {
   result.setInt("captureHeight", started.captureHeight);
   result.setInt("frameWidth", started.frameWidth);
   result.setInt("frameHeight", started.frameHeight);
+  result.setBool("h264", started.h264);
+  result.setString("encoderName", started.encoderName);
   return result.get();
 }
 
@@ -102,8 +104,9 @@ napi_value AcquireFrameImpl(napi_env env, napi_callback_info info) {
   double since = 0;
   NapiCheck(napi_get_value_double(env, sinceValue, &since), "sinceFrameId");
   const uint64_t sinceId = since > 0 ? static_cast<uint64_t>(since) : 0;
-  DxgiJpegFrame frame;
-  if (!CopyLatestJpeg(sinceId, frame) || frame.jpeg.empty()) return JsNull(env);
+  DxgiFrame frame;
+  if (!CopyLatestFrame(sinceId, frame)) return JsNull(env);
+  if (frame.h264.empty() && frame.jpeg.empty()) return JsNull(env);
 
   JsObject result(env);
   result.set("frameId", JsU64(env, frame.frameId));
@@ -111,10 +114,18 @@ napi_value AcquireFrameImpl(napi_env env, napi_callback_info info) {
   result.setInt("height", frame.height);
   result.setInt("originX", frame.originX);
   result.setInt("originY", frame.originY);
-  napi_value buffer;
-  void* data = nullptr;
-  NapiCheck(napi_create_buffer_copy(env, frame.jpeg.size(), frame.jpeg.data(), &data, &buffer), "jpeg");
-  result.set("jpeg", buffer);
+  result.setBool("keyframe", frame.keyframe);
+  if (!frame.h264.empty()) {
+    napi_value buffer;
+    void* data = nullptr;
+    NapiCheck(napi_create_buffer_copy(env, frame.h264.size(), frame.h264.data(), &data, &buffer), "h264");
+    result.set("h264", buffer);
+  } else {
+    napi_value buffer;
+    void* data = nullptr;
+    NapiCheck(napi_create_buffer_copy(env, frame.jpeg.size(), frame.jpeg.data(), &data, &buffer), "jpeg");
+    result.set("jpeg", buffer);
+  }
   return result.get();
 }
 

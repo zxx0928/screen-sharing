@@ -1,6 +1,7 @@
 import type { CapturePlan, DesktopApi, DxgiFrame } from "../shared/desktop-api";
+import { createH264Preview, type H264Preview } from "./h264-preview";
 
-export type CaptureSource = "display-media" | "placeholder" | "electron-desktop" | "dxgi";
+export type CaptureSource = "display-media" | "placeholder" | "electron-desktop" | "dxgi" | "dxgi-h264";
 
 /**
  * Outbound screen track for the host role.
@@ -11,8 +12,8 @@ export type CaptureSource = "display-media" | "placeholder" | "electron-desktop"
  */
 export async function acquireScreenTrack(plan: CapturePlan): Promise<{ track: MediaStreamTrack; source: CaptureSource }> {
   if (plan.mode === "dxgi") {
-    const track = await captureDxgi(plan.displayIndex);
-    if (track) return { track, source: "dxgi" };
+    const captured = await captureDxgi(plan.displayIndex);
+    if (captured) return captured;
     console.warn("[capture] DXGI pump failed; trying the Electron desktop source");
     if (plan.fallbackSourceId) {
       const fallback = await captureElectronDesktop(plan.fallbackSourceId);
@@ -36,7 +37,7 @@ export async function acquireScreenTrack(plan: CapturePlan): Promise<{ track: Me
   return { track: createPlaceholderTrack(), source: "placeholder" };
 }
 
-async function captureDxgi(displayIndex: number): Promise<MediaStreamTrack | null> {
+async function captureDxgi(displayIndex: number): Promise<{ track: MediaStreamTrack; source: "dxgi" | "dxgi-h264" } | null> {
   let started: Awaited<ReturnType<DesktopApi["startDxgiCapture"]>>;
   try {
     started = await window.desktop.startDxgiCapture(displayIndex);
@@ -77,10 +78,11 @@ async function captureDxgi(displayIndex: number): Promise<MediaStreamTrack | nul
 
   let drawing = false;
   let pending: DxgiFrame | null = null;
+  const preview: H264Preview = createH264Preview(canvas, ctx, requestFrame);
   const drawNext = (): void => {
     const frame = pending;
     pending = null;
-    if (!frame) {
+    if (!frame?.jpeg || frame.jpeg.byteLength === 0) {
       drawing = false;
       return;
     }
@@ -104,6 +106,11 @@ async function captureDxgi(displayIndex: number): Promise<MediaStreamTrack | nul
   };
 
   const unsubscribe = window.desktop.onDxgiFrame((frame) => {
+    // Deltas cannot be dropped. JPEG can keep only the newest still.
+    if (frame.h264 && frame.h264.byteLength > 0) {
+      preview.push(new Uint8Array(frame.h264), Boolean(frame.keyframe));
+      return;
+    }
     pending = frame;
     if (!drawing) drawNext();
   });
@@ -114,6 +121,7 @@ async function captureDxgi(displayIndex: number): Promise<MediaStreamTrack | nul
     if (stopped) return;
     stopped = true;
     unsubscribe();
+    preview.close();
     canvas.remove();
     window.desktop.stopDxgiCapture();
   };
@@ -122,7 +130,12 @@ async function captureDxgi(displayIndex: number): Promise<MediaStreamTrack | nul
     stop();
   };
   track.addEventListener("ended", release);
-  return decorate(track);
+  const decorated = decorate(track);
+  if (!decorated) {
+    release();
+    return null;
+  }
+  return { track: decorated, source: started.transport === "h264" ? "dxgi-h264" : "dxgi" };
 }
 
 function paintWaiting(ctx: CanvasRenderingContext2D, width: number, height: number): void {

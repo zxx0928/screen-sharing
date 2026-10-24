@@ -14,7 +14,8 @@
         "src/addon.cc",
         "src/dxgi_capture.cc",
         "src/send_input.cc",
-        "src/mf_probe.cc"
+        "src/mf_probe.cc",
+        "src/h264_encoder.cc"
       ],
       "conditions": [
         [
@@ -28,7 +29,8 @@
               "oleaut32.lib",
               "windowscodecs.lib",
               "mfplat.lib",
-              "mfuuid.lib"
+              "mfuuid.lib",
+              "wmcodecdspuuid.lib"
             ],
             "msvs_settings": {
               "VCCLCompilerTool": {

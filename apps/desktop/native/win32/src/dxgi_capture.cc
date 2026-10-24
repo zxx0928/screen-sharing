@@ -1,4 +1,5 @@
 #include "dxgi_capture.h"
+#include "h264_encoder.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -33,6 +34,9 @@ namespace {
 constexpr int kDefaultMaxWidth = 1920;
 constexpr int kMaxDimension = 3840;
 constexpr long long kMaxPixels = 3840LL * 3840LL;
+constexpr int kH264Bitrate = 8000000;
+constexpr int kH264Fps = 30;
+constexpr int kH264Gop = 60;
 
 std::string WideToUtf8(const wchar_t* value) {
   if (!value || value[0] == L'\0') return {};
@@ -315,6 +319,54 @@ bool EnsureStaging(DeviceBundle& bundle, const D3D11_TEXTURE2D_DESC& source) {
   return true;
 }
 
+// Copies a tightly packed, even-sized BGRA image and unmaps the staging texture
+// before returning. The caller must ReleaseFrame after this so the duplication
+// slot is not held across JPEG or H.264 encoding.
+bool CopyMappedBgra(DeviceBundle& bundle, IDXGIResource* resource, int maxFrameWidth, std::vector<uint8_t>& pixels,
+                    int& frameWidth, int& frameHeight) {
+  frameWidth = 0;
+  frameHeight = 0;
+  pixels.clear();
+  ComPtr<ID3D11Texture2D> texture;
+  if (FAILED(resource->QueryInterface(IID_PPV_ARGS(&texture)))) return false;
+  D3D11_TEXTURE2D_DESC desc = {};
+  texture->GetDesc(&desc);
+  if (desc.Format != DXGI_FORMAT_B8G8R8A8_UNORM && desc.Format != DXGI_FORMAT_B8G8R8A8_UNORM_SRGB) return false;
+  if (!EnsureStaging(bundle, desc)) return false;
+  bundle.context->CopyResource(bundle.staging.Get(), texture.Get());
+
+  D3D11_MAPPED_SUBRESOURCE mapped = {};
+  if (FAILED(bundle.context->Map(bundle.staging.Get(), 0, D3D11_MAP_READ, 0, &mapped))) return false;
+
+  const int width = static_cast<int>(desc.Width);
+  const int height = static_cast<int>(desc.Height);
+  const int stride = static_cast<int>(mapped.RowPitch);
+  bool ok = false;
+  if (mapped.pData && stride >= width * 4 && width >= 2 && height >= 2) {
+    int fittedWidth = 0;
+    int fittedHeight = 0;
+    const uint8_t* src = static_cast<const uint8_t*>(mapped.pData);
+    if (FitEven(width, height, maxFrameWidth, fittedWidth, fittedHeight)) {
+      if (fittedWidth != width || fittedHeight != height) {
+        ScaleBgraNearest(src, width, height, stride, fittedWidth, fittedHeight, pixels);
+      } else if (stride == width * 4) {
+        pixels.assign(src, src + static_cast<size_t>(width) * static_cast<size_t>(height) * 4);
+      } else {
+        pixels.resize(static_cast<size_t>(width) * static_cast<size_t>(height) * 4);
+        for (int y = 0; y < height; ++y) {
+          std::memcpy(pixels.data() + static_cast<size_t>(y) * static_cast<size_t>(width) * 4,
+                      src + static_cast<size_t>(y) * static_cast<size_t>(stride), static_cast<size_t>(width) * 4);
+        }
+      }
+      frameWidth = fittedWidth;
+      frameHeight = fittedHeight;
+      ok = !pixels.empty();
+    }
+  }
+  bundle.context->Unmap(bundle.staging.Get(), 0);
+  return ok;
+}
+
 struct StartGate {
   std::mutex mu;
   std::condition_variable cv;
@@ -347,7 +399,7 @@ class CaptureService {
     DxgiStart result;
     {
       std::unique_lock<std::mutex> gateLock(gate->mu);
-      gate->cv.wait_for(gateLock, std::chrono::seconds(3), [&] { return gate->done; });
+      gate->cv.wait_for(gateLock, std::chrono::seconds(5), [&] { return gate->done; });
       result = gate->result;
     }
     if (!gate->done || !result.ok) {
@@ -366,9 +418,10 @@ class CaptureService {
     StopUnlocked();
   }
 
-  bool CopyFrame(uint64_t since, DxgiJpegFrame& out) {
+  bool CopyFrame(uint64_t since, DxgiFrame& out) {
     std::lock_guard<std::mutex> lock(frameMu_);
-    if (latest_.frameId == 0 || latest_.frameId <= since || latest_.jpeg.empty()) return false;
+    if (latest_.frameId == 0 || latest_.frameId <= since) return false;
+    if (latest_.jpeg.empty() && latest_.h264.empty()) return false;
     out = latest_;
     return true;
   }
@@ -425,6 +478,14 @@ class CaptureService {
         return;
       }
 
+      H264Encoder encoder;
+      std::string encoderError;
+      const bool h264 = encoder.Open(frameWidth, frameHeight, kH264Bitrate, kH264Fps, kH264Gop, encoderError);
+      if (!h264) {
+        std::fprintf(stderr, "[dxgi] h264 encoder unavailable, JPEG fallback: %s\n",
+                     encoderError.empty() ? "open failed" : encoderError.c_str());
+      }
+
       DxgiStart started;
       started.ok = true;
       started.originX = bundle.display.originX;
@@ -433,8 +494,10 @@ class CaptureService {
       started.captureHeight = bundle.display.height;
       started.frameWidth = frameWidth;
       started.frameHeight = frameHeight;
+      started.h264 = h264;
+      if (h264) started.encoderName = encoder.name();
       gate->Finish(started);
-      CaptureLoop(bundle, factory.Get(), maxFrameWidth, displayIndex);
+      CaptureLoop(bundle, factory.Get(), maxFrameWidth, displayIndex, encoder);
     } catch (const std::exception& ex) {
       std::fprintf(stderr, "[dxgi] capture thread exception: %s\n", ex.what());
       DxgiStart failed;
@@ -443,7 +506,8 @@ class CaptureService {
     }
   }
 
-  void CaptureLoop(DeviceBundle& bundle, IWICImagingFactory* factory, int maxFrameWidth, int displayIndex) {
+  void CaptureLoop(DeviceBundle& bundle, IWICImagingFactory* factory, int maxFrameWidth, int displayIndex,
+                   H264Encoder& encoder) {
     uint64_t nextId = 1;
     while (!stop_.load()) {
       if (!bundle.duplication) {
@@ -479,67 +543,44 @@ class CaptureService {
       }
       if (FAILED(acquired) || !resource) continue;
 
-      Publish(bundle, resource.Get(), factory, maxFrameWidth, nextId);
+      std::vector<uint8_t> pixels;
+      int frameWidth = 0;
+      int frameHeight = 0;
+      const bool copied = CopyMappedBgra(bundle, resource.Get(), maxFrameWidth, pixels, frameWidth, frameHeight);
       bundle.duplication->ReleaseFrame();
+      if (!copied) continue;
+
+      if (encoder.active()) {
+        bool keyframe = false;
+        std::vector<uint8_t> annexb;
+        const H264EncodeStatus status =
+            encoder.Encode(pixels.data(), frameWidth, frameHeight, frameWidth * 4, keyframe, annexb);
+        if (status == H264EncodeStatus::Frame && !annexb.empty()) {
+          StoreFrame(bundle, nextId, frameWidth, frameHeight, {}, std::move(annexb), keyframe);
+          continue;
+        }
+        if (status == H264EncodeStatus::NeedMore) continue;
+        std::fprintf(stderr, "[dxgi] h264 encode failed; falling back to JPEG\n");
+      }
+
+      std::vector<uint8_t> jpeg;
+      if (!EncodeJpeg(factory, pixels.data(), frameWidth, frameHeight, frameWidth * 4, jpeg)) continue;
+      StoreFrame(bundle, nextId, frameWidth, frameHeight, std::move(jpeg), {}, false);
     }
   }
 
-  void Publish(DeviceBundle& bundle, IDXGIResource* resource, IWICImagingFactory* factory, int maxFrameWidth,
-               uint64_t& nextId) {
-    ComPtr<ID3D11Texture2D> texture;
-    if (FAILED(resource->QueryInterface(IID_PPV_ARGS(&texture)))) return;
-    D3D11_TEXTURE2D_DESC desc = {};
-    texture->GetDesc(&desc);
-    if (desc.Format != DXGI_FORMAT_B8G8R8A8_UNORM && desc.Format != DXGI_FORMAT_B8G8R8A8_UNORM_SRGB) return;
-    if (!EnsureStaging(bundle, desc)) return;
-    bundle.context->CopyResource(bundle.staging.Get(), texture.Get());
-
-    D3D11_MAPPED_SUBRESOURCE mapped = {};
-    if (FAILED(bundle.context->Map(bundle.staging.Get(), 0, D3D11_MAP_READ, 0, &mapped))) return;
-    const int width = static_cast<int>(desc.Width);
-    const int height = static_cast<int>(desc.Height);
-    const int stride = static_cast<int>(mapped.RowPitch);
-    std::vector<uint8_t> jpeg;
-    bool encoded = false;
-    if (mapped.pData && stride >= width * 4 && width >= 2 && height >= 2) {
-      int frameWidth = 0;
-      int frameHeight = 0;
-      const uint8_t* pixels = static_cast<const uint8_t*>(mapped.pData);
-      if (FitEven(width, height, maxFrameWidth, frameWidth, frameHeight) &&
-          (frameWidth != width || frameHeight != height)) {
-        std::vector<uint8_t> scaled;
-        ScaleBgraNearest(pixels, width, height, stride, frameWidth, frameHeight, scaled);
-        encoded = EncodeJpeg(factory, scaled.data(), frameWidth, frameHeight, frameWidth * 4, jpeg);
-      } else if (stride == width * 4) {
-        encoded = EncodeJpeg(factory, pixels, width, height, stride, jpeg);
-      } else {
-        std::vector<uint8_t> packed(static_cast<size_t>(width) * static_cast<size_t>(height) * 4);
-        for (int y = 0; y < height; ++y) {
-          std::memcpy(packed.data() + static_cast<size_t>(y) * static_cast<size_t>(width) * 4,
-                      pixels + static_cast<size_t>(y) * static_cast<size_t>(stride), static_cast<size_t>(width) * 4);
-        }
-        encoded = EncodeJpeg(factory, packed.data(), width, height, width * 4, jpeg);
-      }
-    }
-    bundle.context->Unmap(bundle.staging.Get(), 0);
-    if (!encoded) return;
-
-    DxgiJpegFrame frame;
+  void StoreFrame(const DeviceBundle& bundle, uint64_t& nextId, int width, int height, std::vector<uint8_t> jpeg,
+                  std::vector<uint8_t> h264, bool keyframe) {
+    if (jpeg.empty() && h264.empty()) return;
+    DxgiFrame frame;
     frame.frameId = nextId++;
-    frame.width = 0;
-    frame.height = 0;
+    frame.width = width;
+    frame.height = height;
     frame.originX = bundle.display.originX;
     frame.originY = bundle.display.originY;
-    // Width/height describe the JPEG, which FitEven already applied.
-    // Re-read from the encode inputs by parsing is unnecessary: jpeg is the
-    // scaled image, and the renderer resizes the canvas to these fields.
-    // Store them by decoding the scale decision again from the texture size.
-    int frameWidth = 0;
-    int frameHeight = 0;
-    if (!FitEven(width, height, maxFrameWidth, frameWidth, frameHeight)) return;
-    frame.width = frameWidth;
-    frame.height = frameHeight;
+    frame.keyframe = keyframe;
     frame.jpeg = std::move(jpeg);
+    frame.h264 = std::move(h264);
     std::lock_guard<std::mutex> lock(frameMu_);
     latest_ = std::move(frame);
   }
@@ -548,7 +589,7 @@ class CaptureService {
   std::atomic<bool> stop_{true};
   std::thread thread_;
   std::mutex frameMu_;
-  DxgiJpegFrame latest_;
+  DxgiFrame latest_;
 };
 
 std::mutex g_serviceMu;
@@ -587,7 +628,7 @@ void StopDesktopCapture() {
   delete service;
 }
 
-bool CopyLatestJpeg(uint64_t since, DxgiJpegFrame& out) {
+bool CopyLatestFrame(uint64_t since, DxgiFrame& out) {
   std::lock_guard<std::mutex> lock(g_serviceMu);
   if (!g_service) return false;
   return g_service->CopyFrame(since, out);

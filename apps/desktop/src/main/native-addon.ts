@@ -31,6 +31,8 @@ export type NativeCaptureStart =
       captureHeight: number;
       frameWidth: number;
       frameHeight: number;
+      h264?: boolean;
+      encoderName?: string;
     }
   | { ok: false; error: string };
 
@@ -40,7 +42,9 @@ export type NativeFrame = {
   height: number;
   originX: number;
   originY: number;
-  jpeg: Buffer;
+  keyframe?: boolean;
+  jpeg?: Buffer;
+  h264?: Buffer;
 };
 
 /**

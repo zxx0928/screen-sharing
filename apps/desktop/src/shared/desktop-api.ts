@@ -21,15 +21,22 @@ export type DxgiStartResult =
       captureHeight: number;
       frameWidth: number;
       frameHeight: number;
+      transport: "h264" | "jpeg";
+      encoderName: string;
     }
   | { ok: false; reason: string };
 
-/** One JPEG preview frame from the main-process DXGI pump. */
+/**
+ * One frame from the main-process DXGI pump.
+ * `h264` is Annex-B. `jpeg` is the WIC fallback. A frame carries one of them.
+ */
 export type DxgiFrame = {
   frameId: number;
   width: number;
   height: number;
-  jpeg: Uint8Array;
+  keyframe?: boolean;
+  jpeg?: Uint8Array;
+  h264?: Uint8Array;
 };
 
 export type DesktopConfig = {
@@ -43,7 +50,7 @@ export type DesktopApi = {
   getConfig(): Promise<DesktopConfig>;
   getCapturePlan(): Promise<CapturePlan>;
   /**
-   * Host only. Start DXGI duplication and stream JPEG frames to this window.
+   * Host only. Start DXGI duplication and stream H.264 or JPEG frames to this window.
    * The native addon stays in the main process.
    */
   startDxgiCapture(displayIndex: number): Promise<DxgiStartResult>;

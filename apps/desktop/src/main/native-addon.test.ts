@@ -66,11 +66,14 @@ test("addon candidates sit next to the bundled main process and the node-gyp out
   assert.equal(candidates[1], path.resolve("/app/dist", "..", "native", "win32", "build", "Release", "screen_sharing_win32.node"));
 });
 
-test("native sources call DXGI, SendInput, and the H.264 enumerator", () => {
-  const nativeSrc = path.resolve(here, "../../native/win32/src");
+test("native sources call DXGI, SendInput, and ProcessInput on a synchronous H.264 MFT", () => {
+  const nativeRoot = path.resolve(here, "../../native/win32");
+  const nativeSrc = path.join(nativeRoot, "src");
   const sendInput = fs.readFileSync(path.join(nativeSrc, "send_input.cc"), "utf8");
   const dxgi = fs.readFileSync(path.join(nativeSrc, "dxgi_capture.cc"), "utf8");
   const probe = fs.readFileSync(path.join(nativeSrc, "mf_probe.cc"), "utf8");
+  const encoder = fs.readFileSync(path.join(nativeSrc, "h264_encoder.cc"), "utf8");
+  const gyp = fs.readFileSync(path.join(nativeRoot, "binding.gyp"), "utf8");
   const injection = fs.readFileSync(path.join(here, "input-injection.ts"), "utf8");
   const capture = fs.readFileSync(path.join(here, "../renderer/capture.ts"), "utf8");
   const bundle = fs.readFileSync(path.join(here, "../../scripts/bundle.mjs"), "utf8");
@@ -79,11 +82,19 @@ test("native sources call DXGI, SendInput, and the H.264 enumerator", () => {
   assert.match(dxgi, /DuplicateOutput\(/);
   assert.match(dxgi, /AcquireNextFrame\(/);
   assert.match(dxgi, /CreateEncoder\(GUID_ContainerFormatJpeg/);
+  assert.match(dxgi, /H264Encoder/);
+  assert.ok(dxgi.indexOf("ReleaseFrame()") < dxgi.indexOf("encoder.Encode("));
   assert.match(probe, /MFTEnumEx\(/);
   assert.match(probe, /MFVideoFormat_H264/);
+  assert.match(encoder, /ProcessInput\(/);
+  assert.match(encoder, /MFVideoFormat_H264/);
+  assert.match(encoder, /MFT_ENUM_FLAG_SYNCMFT/);
+  assert.match(gyp, /h264_encoder\.cc/);
+  assert.match(gyp, /wmcodecdspuuid\.lib/);
   assert.match(injection, /dispatchWin32Inputs/);
   assert.doesNotMatch(injection, /\[input\] stub/);
   assert.match(capture, /startDxgiCapture/);
+  assert.match(capture, /dxgi-h264/);
   assert.doesNotMatch(capture, /TODO\(windows-dxgi\)/);
   assert.match(bundle, /screen_sharing_win32/);
 });

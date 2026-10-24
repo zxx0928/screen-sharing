@@ -7,15 +7,16 @@ import { IpcChannel } from "../shared/ipc";
 import type { DxgiStartResult } from "../shared/desktop-api";
 
 const PUMP_MS = 33;
-const MAX_JPEG_BYTES = 8_000_000;
+const MAX_FRAME_BYTES = 8_000_000;
 
 let owner: WebContents | null = null;
 let timer: NodeJS.Timeout | null = null;
 
 /**
- * DXGI capture pump. Frames are JPEG stills because a full Media Foundation
- * H.264 encoder is the next step (`describeCapturePipeline`). The renderer
- * paints the JPEG onto a canvas and lets Chromium encode the WebRTC track.
+ * DXGI capture pump. The native thread publishes Annex-B H.264 when a
+ * synchronous Media Foundation encoder opens, and WIC JPEG otherwise.
+ * The renderer decodes H.264 onto a canvas; Chromium still encodes the
+ * WebRTC track (`describeCapturePipeline`).
  */
 export function startDxgiFor(webContents: WebContents, displayIndex: number): DxgiStartResult {
   const addon = getWin32Addon();
@@ -56,8 +57,10 @@ export function startDxgiFor(webContents: WebContents, displayIndex: number): Dx
 
   logH264(safeProbe(addon.probeH264.bind(addon)));
   const pipeline = describeCapturePipeline();
+  const transport = started.h264 ? "h264" : "jpeg";
+  const encoderName = started.encoderName ? ` (${started.encoderName})` : "";
   console.log(
-    `[capture] DXGI ${started.captureWidth}x${started.captureHeight} → jpeg ${started.frameWidth}x${started.frameHeight}; next encoder ${pipeline.next.encoder} ${pipeline.next.profile} ${pipeline.next.bitrate}bps`,
+    `[capture] DXGI ${started.captureWidth}x${started.captureHeight} → ${transport} ${started.frameWidth}x${started.frameHeight}${encoderName}; fallback ${pipeline.current.fallback}`,
   );
 
   owner = webContents;
@@ -74,13 +77,19 @@ export function startDxgiFor(webContents: WebContents, displayIndex: number): Dx
       console.error("[capture] acquireFrame failed", error);
       return;
     }
-    if (!frame || frame.jpeg.length === 0 || frame.jpeg.length > MAX_JPEG_BYTES) return;
+    if (!frame) return;
+    const h264 = frame.h264;
+    const jpeg = frame.jpeg;
+    const h264Ok = Boolean(h264 && h264.length > 0 && h264.length <= MAX_FRAME_BYTES);
+    const jpegOk = Boolean(jpeg && jpeg.length > 0 && jpeg.length <= MAX_FRAME_BYTES);
+    if (!h264Ok && !jpegOk) return;
     since = frame.frameId;
     owner.send(IpcChannel.dxgiFrame, {
       frameId: frame.frameId,
       width: frame.width,
       height: frame.height,
-      jpeg: frame.jpeg,
+      keyframe: Boolean(frame.keyframe),
+      ...(h264Ok ? { h264 } : { jpeg }),
     });
   }, PUMP_MS);
 
@@ -93,6 +102,8 @@ export function startDxgiFor(webContents: WebContents, displayIndex: number): Dx
     captureHeight: started.captureHeight,
     frameWidth: started.frameWidth,
     frameHeight: started.frameHeight,
+    transport,
+    encoderName: started.encoderName ?? "",
   };
 }
 
