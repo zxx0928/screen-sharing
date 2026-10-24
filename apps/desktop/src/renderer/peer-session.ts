@@ -1,4 +1,5 @@
 import type { RtcSignal } from "@screen-sharing/protocol";
+import { OUTBOUND_VIDEO_BITRATE, OUTBOUND_VIDEO_FRAMERATE } from "../main/h264-plan";
 import { acquireScreenTrack, type CaptureSource } from "./capture";
 import { bindControllerInput, bindHostInputChannel, INPUT_CHANNEL_LABEL } from "./input-channel";
 
@@ -50,6 +51,7 @@ export function startHostSession(options: SessionOptions): PeerSession {
       });
       options.onCaptureSource?.(captured.source);
       pc.addTrack(track);
+      await configureOutboundVideo(pc, track);
       const offer = await pc.createOffer();
       if (stopped || !offer.sdp) return;
       await pc.setLocalDescription(offer);
@@ -99,6 +101,26 @@ export function startControllerSession(
       pc.close();
     },
   };
+}
+
+async function configureOutboundVideo(pc: RTCPeerConnection, track: MediaStreamTrack): Promise<void> {
+  const sender = pc.getSenders().find((item) => item.track === track);
+  if (!sender) return;
+  try {
+    const params = sender.getParameters();
+    const existing = params.encodings ?? [];
+    const encodings = existing.length > 0 ? existing : [{}];
+    encodings[0] = {
+      ...encodings[0],
+      maxBitrate: OUTBOUND_VIDEO_BITRATE,
+      maxFramerate: OUTBOUND_VIDEO_FRAMERATE,
+    };
+    params.encodings = encodings;
+    params.degradationPreference = "balanced";
+    await sender.setParameters(params);
+  } catch (error) {
+    console.warn("[capture] outbound video parameters were not applied", error);
+  }
 }
 
 function attachIce(pc: RTCPeerConnection, sendSignal: (payload: RtcSignal) => void): void {

@@ -11,6 +11,7 @@ dist/
 release/
 out/
 
-# Future native addon build output (DXGI capture / SendInput). Do not commit.
+# Win32 addon build output (DXGI capture / SendInput). Do not commit.
+apps/desktop/native/win32/build/
 build/Release/
 *.node

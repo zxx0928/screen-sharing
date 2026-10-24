@@ -3,6 +3,7 @@ import path from "node:path";
 import { app, BrowserWindow, clipboard, ipcMain } from "electron";
 import { parseInputEvent } from "@screen-sharing/protocol";
 import { getCapturePlan, installDisplayMediaFallback } from "./capture-plan";
+import { startDxgiFor, stopAllDxgi, stopDxgiFor } from "./dxgi-host";
 import { injectInput, releaseInjectedInput } from "./input-injection";
 import { IpcChannel } from "../shared/ipc";
 
@@ -11,8 +12,8 @@ import { IpcChannel } from "../shared/ipc";
  *
  * One binary is both the controlled host and the controller. WebRTC runs in
  * the renderer because it needs a video element. This process owns the
- * window and, later, the native modules that cannot live in the sandbox:
- * DXGI capture and SendInput injection.
+ * window and the native modules that cannot live in the sandbox:
+ * DXGI capture and SendInput injection (`native/win32`).
  *
  * Phase 1 does not take a single-instance lock. A second window on the same
  * machine is the easiest way to try a 1:1 session. You can also connect to
@@ -33,6 +34,11 @@ app.whenReady().then(() => {
   });
 });
 
+app.on("before-quit", () => {
+  stopAllDxgi();
+  releaseInjectedInput();
+});
+
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
@@ -44,6 +50,15 @@ function registerIpc(): void {
   }));
 
   ipcMain.handle(IpcChannel.getCapturePlan, () => getCapturePlan());
+
+  ipcMain.handle(IpcChannel.startDxgi, (event, displayIndex: unknown) => {
+    const index = typeof displayIndex === "number" ? displayIndex : 0;
+    return startDxgiFor(event.sender, index);
+  });
+
+  ipcMain.on(IpcChannel.stopDxgi, (event) => {
+    stopDxgiFor(event.sender);
+  });
 
   ipcMain.handle(IpcChannel.copyText, (_event, text: unknown) => {
     if (typeof text !== "string" || text.length === 0 || text.length > 256) return false;
@@ -81,6 +96,9 @@ function createWindow(): void {
   });
 
   win.setMenu(null);
+  win.on("close", () => {
+    if (stopDxgiFor(win.webContents)) releaseInjectedInput();
+  });
   win.once("ready-to-show", () => win.show());
   win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
 
