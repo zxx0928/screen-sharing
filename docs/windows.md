@@ -1,5 +1,16 @@
 # Windows 采集与键鼠 / Windows capture and input
 
+不想自己编译时，从 [GitHub Releases](https://github.com/zxx0928/screen-sharing/releases) 下 `XiaoxuConnect-*-win-x64-setup.exe` 或便携版。跨网要填的信令和 TURN 在 [docs/download.md](download.md)，不在安装包里。
+
+自己打安装包（同样需要下面的 C++ 工具链，因为要编 DXGI 插件）：
+
+```powershell
+npm install
+npm run dist:win
+```
+
+产物是 `apps/desktop/release/XiaoxuConnect-<version>-win-x64-setup.exe` 和 `XiaoxuConnect-<version>-win-x64-portable.exe`。
+
 被控端在 Windows 上不再走 `getDisplayMedia` 选择器。主进程加载 `screen_sharing_win32.node`，用 DXGI Desktop Duplication 抓屏幕，用 `SendInput` 注入键鼠。渲染进程开了沙箱，不能加载 `.node`。
 
 On Windows the controlled host does not ask `getDisplayMedia` to show a picker. The main process loads `screen_sharing_win32.node`, captures with DXGI Desktop Duplication, and injects input with `SendInput`. The sandboxed renderer never loads the addon.

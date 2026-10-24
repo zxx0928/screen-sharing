@@ -7,9 +7,12 @@ dist/
 .env.*
 !.env.example
 
-# Electron packager output (not part of Phase 1)
+# Electron packager output
 release/
 out/
+
+# Local signaling / TURN settings for the desktop client. May contain secrets.
+xiaoxu.config.json
 
 # Win32 addon build output (DXGI capture / SendInput). Do not commit.
 apps/desktop/native/win32/build/

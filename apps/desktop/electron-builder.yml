@@ -1,0 +1,64 @@
+# Packaged client for 小旭连接.
+# No signaling host, TURN server, or password is baked into the app.
+# Operators set SIGNALING_URL and TURN_* in a local JSON file or the environment.
+# See docs/download.md and docs/network.md.
+
+appId: app.xiaoxu.connect
+productName: 小旭连接
+electronVersion: 45.0.0
+executableName: XiaoxuConnect
+npmRebuild: false
+nodeGypRebuild: false
+forceCodeSigning: false
+asar: true
+asarUnpack:
+  - "**/*.node"
+directories:
+  output: release
+  buildResources: build
+# esbuild bundles @screen-sharing/protocol into dist. Do not copy that package's
+# source into the installer.
+files:
+  - dist/**/*
+  - package.json
+  - "!**/*.map"
+  - "!node_modules"
+extraMetadata:
+  main: dist/main.js
+  description: 小旭连接。一对一远程协助。
+extraFiles:
+  - from: config/xiaoxu.config.example.json
+    to: xiaoxu.config.example.json
+publish: null
+win:
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  allowElevation: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: 小旭连接
+  uninstallDisplayName: 小旭连接
+  artifactName: XiaoxuConnect-${version}-win-${arch}-setup.${ext}
+  differentialPackage: false
+portable:
+  artifactName: XiaoxuConnect-${version}-win-${arch}-portable.${ext}
+mac:
+  category: public.app-category.utilities
+  icon: build/icon.png
+  identity: null
+  target:
+    - target: zip
+      arch:
+        - x64
+        - arm64
+  artifactName: XiaoxuConnect-${version}-mac-${arch}.${ext}

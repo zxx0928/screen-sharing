@@ -16,6 +16,8 @@
     "build": "npm run build -w @screen-sharing/protocol && npm run build -w @screen-sharing/signaling && npm run build -w @screen-sharing/desktop",
     "typecheck": "npm run build -w @screen-sharing/protocol && npm run typecheck --workspaces --if-present",
     "test": "npm run build -w @screen-sharing/protocol && npm run test --workspaces --if-present",
+    "dist:win": "npm run dist:win -w @screen-sharing/desktop",
+    "dist:mac": "npm run dist:mac -w @screen-sharing/desktop",
     "prepare": "npm run build -w @screen-sharing/protocol"
   },
   "devDependencies": {
