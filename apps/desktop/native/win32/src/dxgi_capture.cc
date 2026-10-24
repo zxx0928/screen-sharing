@@ -10,6 +10,8 @@
 
 #include <windows.h>
 #include <d3d11.h>
+// Windows SDK 10.0.26100 declares ID3D11Multithread in d3d11_4.h.
+#include <d3d11_4.h>
 #include <dxgi1_2.h>
 #include <wincodec.h>
 #include <wrl/client.h>

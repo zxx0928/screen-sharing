@@ -94,6 +94,8 @@ test("native sources call DXGI, SendInput, and ProcessInput on a synchronous H.2
   const bundle = fs.readFileSync(path.join(here, "../../scripts/bundle.mjs"), "utf8");
 
   assert.match(sendInput, /SendInput\(/);
+  assert.match(dxgi, /d3d11_4\.h/);
+  assert.match(dxgi, /ID3D11Multithread/);
   assert.match(dxgi, /DuplicateOutput\(/);
   assert.match(dxgi, /AcquireNextFrame\(/);
   assert.match(dxgi, /CreateEncoder\(GUID_ContainerFormatJpeg/);
