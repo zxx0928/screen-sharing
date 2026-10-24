@@ -14,6 +14,9 @@ import { SignalingClient, type SignalingStatus } from "./signaling-client";
 
 const PASSWORD_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const HISTORY_KEY = "xiaoxu-connect.history.v1";
+const REJECT_NOTICE = "已拒绝。正在换一个临时连接码。";
+/** Confirm ICE `disconnected` before tearing the view down, so a one-packet blip can recover. */
+const CONTROLLER_DISCONNECT_GRACE_MS = 1000;
 
 const ERROR_TEXT: Record<ErrorCode, string> = {
   "room-not-found": "找不到这台设备，请核对设备码。",
@@ -41,6 +44,8 @@ type HistoryItem = { id: string; title: string; at: number; code?: string };
 const state = {
   signaling: "connecting" as SignalingStatus | "error",
   signalingUrl: "",
+  iceServers: [{ urls: ["stun:stun.l.google.com:19302"] }] as RTCIceServer[],
+  iceTransportPolicy: "all" as RTCIceTransportPolicy,
   hostCode: "",
   hostPeer: "offline" as "offline" | "waiting" | "connected",
   capture: "",
@@ -129,6 +134,8 @@ let hostPeerSession: HostPeerSession | null = null;
 let controllerPeer: PeerSession | null = null;
 let lastHostStatus: SignalingStatus | "error" = "connecting";
 let controllerGen = 0;
+let hostNoticeTimer: ReturnType<typeof setTimeout> | null = null;
+let controllerDisconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
 state.history = loadHistory();
 state.password = generatePassword();
@@ -267,6 +274,8 @@ async function boot(): Promise<void> {
   try {
     const config = await window.desktop.getConfig();
     state.signalingUrl = config.signalingUrl;
+    state.iceServers = config.iceServers;
+    state.iceTransportPolicy = config.iceTransportPolicy;
   } catch (error) {
     console.error(error);
     state.signaling = "error";
@@ -298,6 +307,10 @@ async function boot(): Promise<void> {
       if (message.type === "room-created") {
         state.hostCode = message.code;
         state.hostPeer = "waiting";
+        if (state.hostError === REJECT_NOTICE) {
+          state.hostError = "";
+          clearHostNoticeTimer();
+        }
         render();
         return;
       }
@@ -426,8 +439,15 @@ function rejectIncoming(): void {
   state.hostCode = "";
   state.hostPeer = "offline";
   state.capture = "";
-  state.hostTone = "ok";
-  state.hostError = "已拒绝。正在换一个临时连接码。";
+  state.hostTone = "error";
+  state.hostError = REJECT_NOTICE;
+  clearHostNoticeTimer();
+  hostNoticeTimer = setTimeout(() => {
+    hostNoticeTimer = null;
+    if (state.hostError !== REJECT_NOTICE) return;
+    state.hostError = "";
+    render();
+  }, 4000);
   hostClient?.send({ type: "leave" });
   sendCreateRoom();
   render();
@@ -443,6 +463,7 @@ function acceptIncoming(allowControl: boolean): void {
   state.control = allowControl;
   state.capture = "正在采集画面…";
   hostPeerSession = startHostSession({
+    ...rtcTransport(),
     sendSignal: (payload) => hostClient?.send({ type: "signal", payload }),
     onCaptureSource: (source) => {
       state.capture = CAPTURE_TEXT[source];
@@ -519,6 +540,7 @@ function handleControllerMessage(message: ServerMessage, gen: number): void {
   switch (message.type) {
     case "joined":
       controllerPeer = startControllerSession({
+        ...rtcTransport(),
         stage,
         video,
         localMouse: () => state.localMouse,
@@ -527,8 +549,21 @@ function handleControllerMessage(message: ServerMessage, gen: number): void {
         onConnectionState: (connection) => {
           if (gen !== controllerGen) return;
           if (connection === "connected") {
+            clearControllerDisconnectTimer();
             state.controllerPhase = "live";
             stage.focus();
+            render();
+            return;
+          }
+          if (connection === "disconnected") {
+            if (controllerDisconnectTimer) return;
+            controllerDisconnectTimer = setTimeout(() => {
+              controllerDisconnectTimer = null;
+              if (gen !== controllerGen) return;
+              const established = state.controllerPhase === "live";
+              failController(established ? "对方已结束会话。" : "连接已结束。", established);
+            }, CONTROLLER_DISCONNECT_GRACE_MS);
+            return;
           }
           if (connection === "failed" || connection === "closed") {
             const established = state.controllerPhase === "live";
@@ -596,6 +631,7 @@ function disconnectGuest(): void {
   if (had) {
     noteHistory("host");
     state.controllerPhase = "ended";
+    hostClient?.send({ type: "end-session" });
   }
   render();
 }
@@ -648,6 +684,7 @@ function stopHostPeer(): void {
 }
 
 function stopController(): void {
+  clearControllerDisconnectTimer();
   controllerGen += 1;
   const client = controllerClient;
   controllerClient = null;
@@ -656,6 +693,22 @@ function stopController(): void {
   client?.send({ type: "leave" });
   client?.close();
   video.srcObject = null;
+}
+
+function rtcTransport(): { iceServers: RTCIceServer[]; iceTransportPolicy: RTCIceTransportPolicy } {
+  return { iceServers: state.iceServers, iceTransportPolicy: state.iceTransportPolicy };
+}
+
+function clearHostNoticeTimer(): void {
+  if (!hostNoticeTimer) return;
+  clearTimeout(hostNoticeTimer);
+  hostNoticeTimer = null;
+}
+
+function clearControllerDisconnectTimer(): void {
+  if (!controllerDisconnectTimer) return;
+  clearTimeout(controllerDisconnectTimer);
+  controllerDisconnectTimer = null;
 }
 
 function readHostPassword(): string | undefined | null {

@@ -1,4 +1,5 @@
 import type { InputEvent } from "@screen-sharing/protocol";
+import type { IceServer, IceTransportPolicy } from "./ice-config";
 
 /**
  * How the host should produce the outbound screen track.
@@ -44,6 +45,13 @@ export type DesktopConfig = {
   signalingUrl: string;
   /** `process.platform` of this Electron main process (`win32` first). */
   platform: string;
+  /**
+   * STUN/TURN servers for the WebRTC session.
+   * TURN credentials come from the environment on this machine, not from the repo.
+   */
+  iceServers: IceServer[];
+  /** `relay` forces TURN. `all` allows host, server-reflexive, and relay candidates. */
+  iceTransportPolicy: IceTransportPolicy;
 };
 
 export type DesktopApi = {

@@ -5,6 +5,7 @@ import { parseInputEvent } from "@screen-sharing/protocol";
 import { getCapturePlan, installDisplayMediaFallback } from "./capture-plan";
 import { startDxgiFor, stopAllDxgi, stopDxgiFor } from "./dxgi-host";
 import { injectInput, releaseInjectedInput, setRemoteControlAllowed } from "./input-injection";
+import { describeIceConfig, readIceConfig } from "../shared/ice-config";
 import { IpcChannel } from "../shared/ipc";
 
 /**
@@ -23,6 +24,18 @@ import { IpcChannel } from "../shared/ipc";
 const DEFAULT_SIGNALING_URL = "ws://127.0.0.1:8787";
 
 app.setName("小旭连接");
+
+let loggedIce = false;
+
+function currentIce() {
+  const ice = readIceConfig(process.env);
+  if (!loggedIce) {
+    loggedIce = true;
+    // URLs and policy only. describeIceConfig never includes TURN secrets.
+    console.log(`[ice] ${describeIceConfig(ice)}`);
+  }
+  return ice;
+}
 
 app.whenReady().then(() => {
   installDisplayMediaFallback();
@@ -44,10 +57,15 @@ app.on("window-all-closed", () => {
 });
 
 function registerIpc(): void {
-  ipcMain.handle(IpcChannel.getConfig, () => ({
-    signalingUrl: process.env.SIGNALING_URL || DEFAULT_SIGNALING_URL,
-    platform: process.platform,
-  }));
+  ipcMain.handle(IpcChannel.getConfig, () => {
+    const ice = currentIce();
+    return {
+      signalingUrl: process.env.SIGNALING_URL || DEFAULT_SIGNALING_URL,
+      platform: process.platform,
+      iceServers: ice.iceServers,
+      iceTransportPolicy: ice.iceTransportPolicy,
+    };
+  });
 
   ipcMain.handle(IpcChannel.getCapturePlan, () => getCapturePlan());
 

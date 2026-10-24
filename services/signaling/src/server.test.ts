@@ -63,6 +63,48 @@ test("device-code room relays one offer and rejects a second controller", async 
   }
 });
 
+test("host end-session frees the controller and keeps the device code", async () => {
+  const server = await startSignalingServer(0);
+  const sockets: WebSocket[] = [];
+  try {
+    const host = await connect(server.port);
+    sockets.push(host);
+    const createdWait = takeMessage(host);
+    host.send(JSON.stringify({ type: "create-room" }));
+    const created = await createdWait;
+    assert.equal(created.type, "room-created");
+    if (created.type !== "room-created") return;
+
+    const controller = await connect(server.port);
+    sockets.push(controller);
+    const joinedWait = takeMessage(controller);
+    const peerWait = takeMessage(host);
+    controller.send(JSON.stringify({ type: "join-room", code: created.code }));
+    assert.equal((await joinedWait).type, "joined");
+    assert.equal((await peerWait).type, "peer-joined");
+
+    const rejectedWait = takeMessage(controller);
+    controller.send(JSON.stringify({ type: "end-session" }));
+    const rejected = await rejectedWait;
+    assert.equal(rejected.type, "error");
+    if (rejected.type === "error") assert.equal(rejected.code, "not-host");
+
+    const leftWait = takeMessage(controller);
+    host.send(JSON.stringify({ type: "end-session" }));
+    assert.deepEqual(await leftWait, { type: "peer-left", role: "host" });
+
+    const next = await connect(server.port);
+    sockets.push(next);
+    const nextWait = takeMessage(next);
+    next.send(JSON.stringify({ type: "join-room", code: created.code }));
+    const nextJoined = await nextWait;
+    assert.equal(nextJoined.type, "joined");
+  } finally {
+    for (const socket of sockets) socket.close();
+    await server.close();
+  }
+});
+
 test("closing the host socket removes the room", async () => {
   const server = await startSignalingServer(0);
   const host = await connect(server.port);

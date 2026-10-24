@@ -21,6 +21,10 @@ import { RoomRegistry } from "./rooms.js";
  * Share on/off and remote-control permission are not room events. They travel
  * on the input DataChannel (`session-state`). Stopping the picture must not
  * look like `leave`: the device-code room stays up.
+ *
+ * `end-session` is the host hanging up the call. The controller is dropped
+ * immediately (`peer-left`) and the device code stays. `leave` from the host
+ * still deletes the room.
  */
 
 const MAX_PAYLOAD_BYTES = 256 * 1024;
@@ -136,6 +140,19 @@ export function startSignalingServer(port: number, host = "127.0.0.1"): Promise<
         }
         log("signal", { code: relay.code, from: relay.role, kind: message.payload.type });
         send(peer.socket, { type: "signal", from: relay.role, payload: message.payload });
+        return;
+      }
+      case "end-session": {
+        const ended = registry.endSession(conn.id);
+        if (!ended.ok) {
+          sendError(conn.socket, ended.error);
+          return;
+        }
+        log("session-ended", { code: ended.code });
+        if (!ended.peerId) return;
+        const peer = connections.get(ended.peerId);
+        if (!peer) return;
+        send(peer.socket, { type: "peer-left", role: "host" });
         return;
       }
       case "leave":
