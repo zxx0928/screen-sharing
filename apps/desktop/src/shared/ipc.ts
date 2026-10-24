@@ -7,5 +7,6 @@ export const IpcChannel = {
   stopDxgi: "capture:dxgi-stop",
   dxgiFrame: "capture:dxgi-frame",
   injectInput: "input:inject",
+  setRemoteControl: "input:set-control",
   endInputSession: "input:session-end",
 } as const;

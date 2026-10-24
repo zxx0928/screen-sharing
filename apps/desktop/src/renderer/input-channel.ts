@@ -1,22 +1,40 @@
-import { INPUT_CHANNEL_LABEL, parseInputEvent, type InputEvent } from "@screen-sharing/protocol";
+import {
+  INPUT_CHANNEL_LABEL,
+  parseDataChannelControl,
+  parseInputEvent,
+  serializeSessionSync,
+  type InputEvent,
+  type SessionState,
+} from "@screen-sharing/protocol";
 
 export { INPUT_CHANNEL_LABEL };
 
-/** Host side: DataChannel messages become main-process injection calls. */
-export function bindHostInputChannel(channel: RTCDataChannel): void {
+/**
+ * Host side: input events become main-process injection calls when remote
+ * control is allowed. `session-sync` asks the host to resend its policy.
+ * The main process also drops input while control is off, so a missed check
+ * here still cannot reach SendInput.
+ */
+export function bindHostInputChannel(
+  channel: RTCDataChannel,
+  controlEnabled: () => boolean,
+  onSessionSync: () => void,
+): void {
   channel.onmessage = (event) => {
-    if (typeof event.data !== "string") return;
-    let json: unknown;
-    try {
-      json = JSON.parse(event.data) as unknown;
-    } catch {
+    const json = parseJson(event.data);
+    if (!json) return;
+    const control = parseDataChannelControl(json);
+    if (control?.type === "session-sync") {
+      onSessionSync();
       return;
     }
+    if (control) return;
     const input = parseInputEvent(json);
     if (!input) {
       console.warn("[input] ignored malformed datachannel payload");
       return;
     }
+    if (!controlEnabled()) return;
     window.desktop.injectInput(input);
   };
   channel.onclose = () => {
@@ -28,12 +46,31 @@ export function bindHostInputChannel(channel: RTCDataChannel): void {
  * Controller side: pointer and keyboard on the remote stage become input events.
  * Listeners are removed when the returned function runs.
  */
-export function bindControllerInput(channel: RTCDataChannel, stage: HTMLElement, video: HTMLVideoElement): () => void {
+export function bindControllerInput(
+  channel: RTCDataChannel,
+  stage: HTMLElement,
+  video: HTMLVideoElement,
+  controlEnabled: () => boolean,
+  onSessionState: (state: SessionState) => void,
+): () => void {
   const held = new Set<"left" | "right" | "middle">();
 
   const send = (input: InputEvent): void => {
+    if (!controlEnabled()) return;
     if (channel.readyState !== "open") return;
     channel.send(JSON.stringify(input));
+  };
+
+  const onControlMessage = (event: MessageEvent): void => {
+    const json = parseJson(event.data);
+    if (!json) return;
+    const control = parseDataChannelControl(json);
+    if (control?.type === "session-state") onSessionState(control);
+  };
+
+  const requestState = (): void => {
+    if (channel.readyState !== "open") return;
+    channel.send(serializeSessionSync());
   };
 
   let pendingMove: InputEvent | null = null;
@@ -54,6 +91,7 @@ export function bindControllerInput(channel: RTCDataChannel, stage: HTMLElement,
     if (!button) return;
     stage.focus();
     event.preventDefault();
+    if (!controlEnabled()) return;
     const point = normalizedPoint(video, event.clientX, event.clientY);
     if (!point) return;
     held.add(button);
@@ -97,6 +135,9 @@ export function bindControllerInput(channel: RTCDataChannel, stage: HTMLElement,
   stage.addEventListener("keyup", onKey);
   stage.addEventListener("contextmenu", onContextMenu);
   window.addEventListener("pointerup", onPointerUp);
+  channel.addEventListener("message", onControlMessage);
+  channel.addEventListener("open", requestState);
+  requestState();
 
   return () => {
     stage.removeEventListener("pointerdown", onPointerDown);
@@ -106,9 +147,20 @@ export function bindControllerInput(channel: RTCDataChannel, stage: HTMLElement,
     stage.removeEventListener("keyup", onKey);
     stage.removeEventListener("contextmenu", onContextMenu);
     window.removeEventListener("pointerup", onPointerUp);
+    channel.removeEventListener("message", onControlMessage);
+    channel.removeEventListener("open", requestState);
     for (const button of held) send({ type: "mouse-button", button, action: "up" });
     held.clear();
   };
+}
+
+function parseJson(data: unknown): unknown {
+  if (typeof data !== "string") return null;
+  try {
+    return JSON.parse(data) as unknown;
+  } catch {
+    return null;
+  }
 }
 
 function queueMoveFromEvent(

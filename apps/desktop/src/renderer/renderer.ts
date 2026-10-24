@@ -1,12 +1,15 @@
 import {
+  DEFAULT_REMOTE_CONTROL_ENABLED,
+  DEFAULT_SHARING_ENABLED,
   formatDeviceCode,
   normalizeDeviceCode,
   normalizeTemporaryPassword,
   type ErrorCode,
   type ServerMessage,
+  type SessionState,
 } from "@screen-sharing/protocol";
 import type { CaptureSource } from "./capture";
-import { startControllerSession, startHostSession, type PeerSession } from "./peer-session";
+import { startControllerSession, startHostSession, type HostPeerSession, type PeerSession } from "./peer-session";
 import { SignalingClient, type SignalingStatus } from "./signaling-client";
 
 const PASSWORD_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -42,6 +45,10 @@ const state = {
   hostError: "",
   hostTone: "error" as "error" | "ok",
   connectError: "",
+  sharing: DEFAULT_SHARING_ENABLED,
+  control: DEFAULT_REMOTE_CONTROL_ENABLED,
+  remoteSharing: DEFAULT_SHARING_ENABLED,
+  remoteControl: DEFAULT_REMOTE_CONTROL_ENABLED,
 };
 
 const codeA = must<HTMLElement>("code-a");
@@ -67,13 +74,20 @@ const sessionTitle = must<HTMLElement>("session-title");
 const sessionDetail = must<HTMLElement>("session-detail");
 const hostBanner = must<HTMLElement>("host-banner");
 const disconnectBtn = must<HTMLButtonElement>("disconnect-btn");
+const shareToggle = must<HTMLButtonElement>("share-toggle");
+const controlEnabled = must<HTMLInputElement>("control-enabled");
+const sessionShareToggle = must<HTMLButtonElement>("session-share-toggle");
+const sessionControlEnabled = must<HTMLInputElement>("session-control-enabled");
+const sessionHostControls = must<HTMLElement>("session-host-controls");
+const remoteShare = must<HTMLElement>("remote-share");
+const remoteControl = must<HTMLElement>("remote-control");
 const stage = must<HTMLElement>("stage");
 const video = must<HTMLVideoElement>("remote-video");
 const stagePlaceholder = must<HTMLElement>("stage-placeholder");
 
 let hostClient: SignalingClient | null = null;
 let controllerClient: SignalingClient | null = null;
-let hostPeerSession: PeerSession | null = null;
+let hostPeerSession: HostPeerSession | null = null;
 let controllerPeer: PeerSession | null = null;
 let lastHostStatus: SignalingStatus | "error" = "connecting";
 
@@ -105,12 +119,17 @@ disconnectBtn.addEventListener("click", () => {
   stopController();
   state.live = false;
   state.connectError = "";
+  resetRemotePolicy();
   stagePlaceholder.hidden = false;
   render();
 });
-video.addEventListener("loadedmetadata", () => {
-  stagePlaceholder.hidden = video.videoWidth > 0;
-});
+shareToggle.addEventListener("click", () => toggleSharing());
+sessionShareToggle.addEventListener("click", () => toggleSharing());
+controlEnabled.addEventListener("change", (event) => onControlToggle(event));
+sessionControlEnabled.addEventListener("change", (event) => onControlToggle(event));
+video.addEventListener("loadedmetadata", () => revealRemoteFrame());
+video.addEventListener("resize", () => revealRemoteFrame());
+video.addEventListener("playing", () => revealRemoteFrame());
 
 void boot();
 render();
@@ -138,6 +157,7 @@ async function boot(): Promise<void> {
         state.hostCode = "";
         state.hostPeer = "offline";
         state.capture = "";
+        resetHostPolicy();
         window.desktop.endInputSession();
       }
       if (becameOpen) sendCreateRoom();
@@ -160,6 +180,7 @@ function handleHostMessage(message: ServerMessage): void {
   switch (message.type) {
     case "peer-joined":
       stopHostPeer();
+      resetHostPolicy();
       state.hostPeer = "connected";
       state.capture = "正在采集画面…";
       hostPeerSession = startHostSession({
@@ -179,6 +200,7 @@ function handleHostMessage(message: ServerMessage): void {
     case "peer-left":
       stopHostPeer();
       window.desktop.endInputSession();
+      resetHostPolicy();
       state.hostPeer = state.hostCode ? "waiting" : "offline";
       state.capture = "";
       render();
@@ -254,11 +276,13 @@ function connectToDevice(): void {
   }
 
   stopController();
+  resetRemotePolicy();
   state.live = true;
   state.connectError = "";
   state.sessionTitle = "正在加入…";
   state.sessionDetail = formatDeviceCode(code);
   stagePlaceholder.hidden = false;
+  stagePlaceholder.textContent = "等待对方画面…";
   render();
 
   const client = new SignalingClient(state.signalingUrl, {
@@ -293,6 +317,7 @@ function handleControllerMessage(message: ServerMessage): void {
           if (connection === "connected") stage.focus();
           render();
         },
+        onSessionState: (session) => applyRemoteSession(session),
       });
       render();
       return;
@@ -315,8 +340,52 @@ function failController(text: string): void {
   stopController();
   state.live = false;
   state.connectError = text;
+  resetRemotePolicy();
   stagePlaceholder.hidden = false;
+  stagePlaceholder.textContent = "等待对方画面…";
   render();
+}
+
+function toggleSharing(): void {
+  if (state.hostPeer !== "connected" || !hostPeerSession) return;
+  const next = !state.sharing;
+  state.sharing = next;
+  state.capture = next ? "正在采集画面…" : "已停止共享，房间仍在。";
+  hostPeerSession.setSharing(next);
+  render();
+}
+
+function onControlToggle(event: Event): void {
+  const input = event.target;
+  if (!(input instanceof HTMLInputElement)) return;
+  if (state.hostPeer !== "connected" || !hostPeerSession) {
+    input.checked = false;
+    return;
+  }
+  state.control = input.checked;
+  hostPeerSession.setRemoteControl(state.control);
+  render();
+}
+
+function applyRemoteSession(session: SessionState): void {
+  state.remoteSharing = session.sharing;
+  state.remoteControl = session.control;
+  render();
+}
+
+function resetHostPolicy(): void {
+  state.sharing = DEFAULT_SHARING_ENABLED;
+  state.control = DEFAULT_REMOTE_CONTROL_ENABLED;
+}
+
+function resetRemotePolicy(): void {
+  state.remoteSharing = DEFAULT_SHARING_ENABLED;
+  state.remoteControl = DEFAULT_REMOTE_CONTROL_ENABLED;
+}
+
+function revealRemoteFrame(): void {
+  if (!state.live || !state.remoteSharing) return;
+  if (video.videoWidth > 0 && video.srcObject) stagePlaceholder.hidden = true;
 }
 
 function stopHostPeer(): void {
@@ -365,11 +434,38 @@ function render(): void {
 
   connectError.hidden = !state.connectError;
   connectError.textContent = state.connectError;
+
+  const hostConnected = state.hostPeer === "connected";
+  const shareLabel = hostConnected && state.sharing ? "停止共享" : "开始共享";
+  for (const button of [shareToggle, sessionShareToggle]) {
+    button.disabled = !hostConnected;
+    button.textContent = shareLabel;
+    button.className = hostConnected && !state.sharing ? "" : "ghost";
+  }
+  for (const box of [controlEnabled, sessionControlEnabled]) {
+    box.disabled = !hostConnected;
+    box.checked = hostConnected && state.control;
+  }
+
   viewHome.hidden = state.live;
   viewRemote.hidden = !state.live;
   sessionTitle.textContent = state.sessionTitle;
   sessionDetail.textContent = state.sessionDetail;
-  hostBanner.hidden = !(state.live && state.hostPeer === "connected");
+  hostBanner.hidden = !(state.live && hostConnected);
+  sessionHostControls.hidden = !(state.live && hostConnected);
+  remoteShare.textContent = state.remoteSharing ? "画面：共享中" : "画面：已停止";
+  remoteShare.className = state.remoteSharing ? "pill on" : "pill off";
+  remoteControl.textContent = state.remoteControl ? "远程控制：开" : "远程控制：关";
+  remoteControl.className = state.remoteControl ? "pill on" : "pill off";
+  stage.dataset.sharing = state.remoteSharing ? "on" : "off";
+  stage.dataset.control = state.remoteControl ? "on" : "off";
+  if (state.live && !state.remoteSharing) {
+    stagePlaceholder.hidden = false;
+    stagePlaceholder.textContent = "对方已停止共享";
+  } else if (state.live && state.remoteSharing) {
+    stagePlaceholder.textContent = "等待对方画面…";
+    stagePlaceholder.hidden = video.videoWidth > 0 && Boolean(video.srcObject);
+  }
 }
 
 function signalingLabel(): string {

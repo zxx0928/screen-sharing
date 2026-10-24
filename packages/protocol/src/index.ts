@@ -5,16 +5,29 @@
  * 1. WebSocket signaling — device-code rooms plus opaque SDP/ICE relay.
  *    The signaling server never sees pixels or keystrokes.
  * 2. WebRTC DataChannel "input" — mouse and keyboard from the controller
- *    to the host. Those messages are defined here so both peers agree,
- *    but they do not travel through the signaling server.
+ *    to the host, plus the host's share/control policy back to the controller.
+ *    Those messages are defined here so both peers agree, but they do not
+ *    travel through the signaling server. Stopping the share is not `leave`.
  *
  * Roles are fixed for a room: `host` is the controlled computer (the one
  * showing the device code). `controller` is the person operating it.
  * A room holds at most one of each. This is not a meeting.
  */
 
-/** WebRTC DataChannel label used for remote input. Keep host and controller in sync. */
+/** WebRTC DataChannel label used for remote input and session policy. Keep both peers in sync. */
 export const INPUT_CHANNEL_LABEL = "input";
+
+/**
+ * Host starts sending a screen track as soon as the controller joins.
+ * Stopping later removes that track only — the room and peer connection stay up.
+ */
+export const DEFAULT_SHARING_ENABLED = true;
+
+/**
+ * Remote control is off until the host explicitly allows it.
+ * While this is false the host must not call SendInput.
+ */
+export const DEFAULT_REMOTE_CONTROL_ENABLED = false;
 
 /** Device codes are 9 digits, the same shape as ToDesk / Sunflower codes. */
 export const DEVICE_CODE_LENGTH = 9;
@@ -109,6 +122,24 @@ export type KeyEvent = {
   code: string;
   action: "down" | "up";
 };
+
+/**
+ * Host → controller on the input DataChannel.
+ * `sharing: false` means the host is not sending a screen track. The signaling
+ * room is unchanged. `control: false` means the host will not inject input.
+ */
+export type SessionState = {
+  type: "session-state";
+  sharing: boolean;
+  control: boolean;
+};
+
+/** Controller → host. Asks for a fresh `session-state` (the first one can race the listener). */
+export type SessionSync = {
+  type: "session-sync";
+};
+
+export type DataChannelControl = SessionState | SessionSync;
 
 /** Messages a client may send to the signaling server. Role is assigned by the server. */
 export type ClientMessage =
@@ -217,6 +248,26 @@ export function parseServerMessage(value: unknown): ServerMessage | null {
     default:
       return null;
   }
+}
+
+export function parseDataChannelControl(value: unknown): DataChannelControl | null {
+  if (!isRecord(value) || typeof value.type !== "string") return null;
+  if (value.type === "session-sync") return { type: "session-sync" };
+  if (value.type === "session-state") {
+    if (typeof value.sharing !== "boolean" || typeof value.control !== "boolean") return null;
+    return { type: "session-state", sharing: value.sharing, control: value.control };
+  }
+  return null;
+}
+
+export function serializeSessionState(sharing: boolean, control: boolean): string {
+  const message: SessionState = { type: "session-state", sharing, control };
+  return JSON.stringify(message);
+}
+
+export function serializeSessionSync(): string {
+  const message: SessionSync = { type: "session-sync" };
+  return JSON.stringify(message);
 }
 
 export function parseInputEvent(value: unknown): InputEvent | null {

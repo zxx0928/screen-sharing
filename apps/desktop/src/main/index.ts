@@ -4,7 +4,7 @@ import { app, BrowserWindow, clipboard, ipcMain } from "electron";
 import { parseInputEvent } from "@screen-sharing/protocol";
 import { getCapturePlan, installDisplayMediaFallback } from "./capture-plan";
 import { startDxgiFor, stopAllDxgi, stopDxgiFor } from "./dxgi-host";
-import { injectInput, releaseInjectedInput } from "./input-injection";
+import { injectInput, releaseInjectedInput, setRemoteControlAllowed } from "./input-injection";
 import { IpcChannel } from "../shared/ipc";
 
 /**
@@ -70,6 +70,10 @@ function registerIpc(): void {
     const event = parseInputEvent(raw);
     if (!event) return;
     injectInput(event);
+  });
+
+  ipcMain.on(IpcChannel.setRemoteControl, (_event, allowed: unknown) => {
+    setRemoteControlAllowed(allowed === true);
   });
 
   ipcMain.on(IpcChannel.endInputSession, () => {

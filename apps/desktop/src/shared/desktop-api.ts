@@ -58,9 +58,15 @@ export type DesktopApi = {
   onDxgiFrame(listener: (frame: DxgiFrame) => void): () => void;
   /**
    * Host only. Forwards one controller input event from the DataChannel
-   * into the main process, which calls SendInput on Windows.
+   * into the main process, which calls SendInput on Windows when remote
+   * control is allowed.
    */
   injectInput(event: InputEvent): void;
+  /**
+   * Host only. `false` (the default) drops input before SendInput and
+   * releases keys this session is holding. `true` allows injection.
+   */
+  setRemoteControl(allowed: boolean): void;
   /** Host only. The remote session ended; release keys this session pressed. */
   endInputSession(): void;
   copyText(text: string): Promise<boolean>;

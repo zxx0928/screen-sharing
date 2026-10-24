@@ -13,7 +13,7 @@
     "prestart": "npm run build",
     "start": "electron .",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "tsx --test src/main/input-mapping.test.ts src/main/capture-plan.test.ts src/main/native-addon.test.ts src/main/annexb.test.ts"
+    "test": "tsx --test src/main/input-mapping.test.ts src/main/capture-plan.test.ts src/main/native-addon.test.ts src/main/annexb.test.ts src/main/remote-control.test.ts"
   },
   "dependencies": {
     "@screen-sharing/protocol": "0.0.1"
