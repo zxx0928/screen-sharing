@@ -102,6 +102,8 @@ test("native sources call DXGI, SendInput, and ProcessInput on a synchronous H.2
   assert.match(dxgi, /H264Encoder/);
   assert.ok(dxgi.indexOf("ReleaseFrame()") < dxgi.indexOf("encoder.Encode("));
   assert.match(probe, /MFTEnumEx\(/);
+  assert.match(probe, /MFT_TRANSFORM_CLSID_Attribute/);
+  assert.doesNotMatch(probe, /MF_TRANSFORM_CLSID_Attribute/);
   assert.match(probe, /MFVideoFormat_H264/);
   assert.match(encoder, /ProcessInput\(/);
   assert.match(encoder, /MFVideoFormat_H264/);

@@ -89,7 +89,7 @@ H264Probe ProbeH264Encoders() {
       if (info.name.empty()) info.name = "H.264 encoder";
 
       CLSID clsid = {};
-      if (SUCCEEDED(activates[i]->GetGUID(MF_TRANSFORM_CLSID_Attribute, &clsid))) {
+      if (SUCCEEDED(activates[i]->GetGUID(MFT_TRANSFORM_CLSID_Attribute, &clsid))) {
         info.clsid = ClsidToString(clsid);
       }
 
