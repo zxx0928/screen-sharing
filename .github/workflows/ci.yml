@@ -21,7 +21,9 @@ jobs:
 
   package-windows:
     if: github.event_name == 'pull_request'
-    runs-on: windows-latest
+    # windows-latest is VS 2026. node-gyp does not recognize that install yet
+    # (version comes back undefined). VS 2022 on windows-2022 builds the DXGI addon.
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

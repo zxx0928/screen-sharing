@@ -53,9 +53,9 @@ test("GitHub Actions builds the Windows packages and attaches them to a release"
   const release = fs.readFileSync(path.join(repoRoot, ".github", "workflows", "release.yml"), "utf8");
   assert.match(ci, /npm test/);
   assert.match(ci, /npm run typecheck/);
-  assert.match(ci, /windows-latest/);
+  assert.match(ci, /windows-2022/);
   assert.match(ci, /npm run dist:win/);
-  assert.match(release, /windows-latest/);
+  assert.match(release, /windows-2022/);
   assert.match(release, /macos-latest/);
   assert.match(release, /npm run dist:win/);
   assert.match(release, /npm run dist:mac/);
