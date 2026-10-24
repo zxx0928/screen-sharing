@@ -1,0 +1,8 @@
+{
+  "SIGNALING_URL": "",
+  "STUN_URLS": "",
+  "TURN_URLS": "",
+  "TURN_USERNAME": "",
+  "TURN_CREDENTIAL": "",
+  "ICE_TRANSPORT_POLICY": ""
+}

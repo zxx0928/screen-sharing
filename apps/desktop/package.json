@@ -1,6 +1,6 @@
 {
   "name": "@screen-sharing/desktop",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": true,
   "description": "Electron client that can host or control a 1:1 remote desktop session",
   "main": "dist/main.js",
@@ -10,17 +10,20 @@
     "prebuild": "npm run build -w @screen-sharing/protocol",
     "build": "node scripts/build.mjs",
     "build:native": "node scripts/build-native.mjs",
+    "dist": "node scripts/dist.mjs",
+    "dist:win": "node scripts/dist.mjs --win nsis portable --x64",
+    "dist:mac": "node scripts/dist.mjs --mac zip --x64 --arm64",
+    "dist:dir": "node scripts/dist.mjs --dir",
     "prestart": "npm run build",
     "start": "electron .",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "tsx --test src/main/input-mapping.test.ts src/main/capture-plan.test.ts src/main/native-addon.test.ts src/main/annexb.test.ts src/main/remote-control.test.ts src/renderer/connect-input.test.ts src/shared/ice-config.test.ts"
-  },
-  "dependencies": {
-    "@screen-sharing/protocol": "0.0.1"
+    "test": "tsx --test src/main/input-mapping.test.ts src/main/capture-plan.test.ts src/main/native-addon.test.ts src/main/annexb.test.ts src/main/remote-control.test.ts src/main/packaging.test.ts src/renderer/connect-input.test.ts src/shared/ice-config.test.ts src/shared/client-config.test.ts"
   },
   "devDependencies": {
+    "@screen-sharing/protocol": "0.0.1",
     "@types/node": "^22.15.0",
-    "electron": "^45.0.0",
+    "electron": "45.0.0",
+    "electron-builder": "^26.18.0",
     "esbuild": "^0.25.0",
     "node-gyp": "^11.2.0",
     "tsx": "^4.20.0",

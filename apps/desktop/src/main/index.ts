@@ -5,7 +5,8 @@ import { parseInputEvent } from "@screen-sharing/protocol";
 import { getCapturePlan, installDisplayMediaFallback } from "./capture-plan";
 import { startDxgiFor, stopAllDxgi, stopDxgiFor } from "./dxgi-host";
 import { injectInput, releaseInjectedInput, setRemoteControlAllowed } from "./input-injection";
-import { describeIceConfig, readIceConfig } from "../shared/ice-config";
+import { resolveDesktopConfig } from "./client-env";
+import type { DesktopConfig } from "../shared/desktop-api";
 import { IpcChannel } from "../shared/ipc";
 
 /**
@@ -19,27 +20,25 @@ import { IpcChannel } from "../shared/ipc";
  * Phase 1 does not take a single-instance lock. A second window on the same
  * machine is the easiest way to try a 1:1 session. You can also connect to
  * the device code shown in the same window; that loops the session locally.
+ *
+ * Signaling and TURN are not compiled in. `resolveDesktopConfig` reads a
+ * local JSON file, then the environment. The environment wins. See docs/download.md.
  */
 
-const DEFAULT_SIGNALING_URL = "ws://127.0.0.1:8787";
-
 app.setName("小旭连接");
+if (process.platform === "win32") app.setAppUserModelId("app.xiaoxu.connect");
 
-let loggedIce = false;
+let desktopConfig: DesktopConfig | null = null;
 
-function currentIce() {
-  const ice = readIceConfig(process.env);
-  if (!loggedIce) {
-    loggedIce = true;
-    // URLs and policy only. describeIceConfig never includes TURN secrets.
-    console.log(`[ice] ${describeIceConfig(ice)}`);
-  }
-  return ice;
+function currentConfig(): DesktopConfig {
+  if (!desktopConfig) desktopConfig = resolveDesktopConfig();
+  return desktopConfig;
 }
 
 app.whenReady().then(() => {
   installDisplayMediaFallback();
   registerIpc();
+  currentConfig();
   createWindow();
 
   app.on("activate", () => {
@@ -57,15 +56,7 @@ app.on("window-all-closed", () => {
 });
 
 function registerIpc(): void {
-  ipcMain.handle(IpcChannel.getConfig, () => {
-    const ice = currentIce();
-    return {
-      signalingUrl: process.env.SIGNALING_URL || DEFAULT_SIGNALING_URL,
-      platform: process.platform,
-      iceServers: ice.iceServers,
-      iceTransportPolicy: ice.iceTransportPolicy,
-    };
-  });
+  ipcMain.handle(IpcChannel.getConfig, () => currentConfig());
 
   ipcMain.handle(IpcChannel.getCapturePlan, () => getCapturePlan());
 
@@ -107,6 +98,7 @@ function createWindow(): void {
     minHeight: 640,
     show: false,
     title: "小旭连接",
+    icon: path.join(__dirname, "renderer", "assets", "mascot.png"),
     backgroundColor: "#F7F1E8",
     roundedCorners: true,
     autoHideMenuBar: true,

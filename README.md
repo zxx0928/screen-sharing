@@ -15,7 +15,13 @@ The same Electron client plays both roles. On Windows the main process captures 
 - 自建轻量 WebSocket 信令，用设备码做房间
 - npm workspaces，TypeScript
 
-No secrets belong in this repo. Signaling binds to `127.0.0.1` unless you change it. TURN usernames and passwords are environment variables; see [docs/network.md](docs/network.md).
+No secrets belong in this repo. Signaling binds to `127.0.0.1` unless you change it. TURN usernames and passwords are environment variables or a local JSON file; see [docs/network.md](docs/network.md).
+
+## 下载安装包 / Download
+
+[GitHub Releases](https://github.com/zxx0928/screen-sharing/releases) 上有 Windows 安装包（NSIS）和便携版，以及未签名的 macOS zip。安装包只带客户端，默认仍连接 `ws://127.0.0.1:8787`。跨网测试要把 `SIGNALING_URL` 和 `TURN_*` 写进本机配置，不要写进仓库。步骤在 [docs/download.md](docs/download.md)。
+
+Windows installers, a portable build, and unsigned macOS zips are attached to GitHub Releases. The app still defaults to `ws://127.0.0.1:8787`. Cross-network testing needs your own `SIGNALING_URL` and `TURN_*` in a local config file. See [docs/download.md](docs/download.md).
 
 ## 目录 / Folder map
 
@@ -148,12 +154,14 @@ Linux 上没有 `.node` 插件，主进程会打一行 `[input] win32 addon not 
 - Windows `SendInput`：扫描码键盘、虚拟屏幕绝对坐标的鼠标、滚轮方向已按 DOM 约定转换。远程控制默认关闭，被控端允许后才注入
 - 被控端可单独开始/停止共享。停止后控制端不再收画面，房间和连接不断开
 - 其它平台仍可用 `getDisplayMedia` 或占位画面把会话跑起来
-- TURN：用环境变量把 coturn 填进 `RTCPeerConnection` 的 `iceServers`。不配则仍是 STUN，同一台机器和大多数局域网够用。见 [docs/network.md](docs/network.md)
+- TURN：用环境变量或本机 JSON 把 coturn 填进 `RTCPeerConnection` 的 `iceServers`。不配则仍是 STUN，同一台机器和大多数局域网够用。见 [docs/network.md](docs/network.md)
+- Windows 安装包和便携版。打 `v*` 标签时 GitHub Actions 把它们附到 Release。见 [docs/download.md](docs/download.md)
 
 现在没有：
 
 - 把 H.264 留在 GPU 上，并用硬件异步 MFT 直接送进 RTP。现在仍会解码到 canvas，由 Chromium 再编码一次。下一步写在 [docs/windows.md](docs/windows.md)
-- macOS
+- 托管的公网信令和 TURN。地址和口令只放在运行信令的机器，以及每台客户端的本机配置里
+- macOS 的 DXGI 同类采集（安装包里的 Mac 版仍走系统屏幕选择器）
 - 账号、设备码防爆破、密码哈希、房间持久化、信令登录口令
 - 剪贴板、文件传输、多显示器切换策略（坐标映射已按多屏虚拟桌面计算，采集默认主显示器）
 - 多人会议
@@ -167,7 +175,7 @@ Linux 上没有 `.node` 插件，主进程会打一行 `[input] win32 addon not 
 | DXGI 采集 | `apps/desktop/native/win32`、`src/main/dxgi-host.ts` | 已接上。渲染进程开了沙箱，不能加载 `.node` |
 | `SendInput` | `src/main/input-injection.ts`、`native/win32/src/send_input.cc` | 已接上。DataChannel 的 `InputEvent` 经 preload 进主进程 |
 | H.264 | `native/win32/src/h264_encoder.cc`、`src/renderer/h264-preview.ts` | 同步 MFT 已接上。下一步是 GPU NV12 和不再二次编码的 RTP |
-| ICE / TURN | `apps/desktop/src/shared/ice-config.ts`、`peer-session.ts` | 已接上。`TURN_URLS` / `TURN_USERNAME` / `TURN_CREDENTIAL`，说明在 [docs/network.md](docs/network.md)。不要把长期凭证提交进仓库 |
+| ICE / TURN | `apps/desktop/src/shared/ice-config.ts`、`client-config.ts`、`peer-session.ts` | 已接上。`TURN_URLS` / `TURN_USERNAME` / `TURN_CREDENTIAL`，说明在 [docs/network.md](docs/network.md) 和 [docs/download.md](docs/download.md)。不要把长期凭证提交进仓库 |
 | `TODO(macos)` | `capture-plan.ts`、`input-injection.ts` | 以后的 ScreenCaptureKit 和 CGEvent |
 
 ```mermaid

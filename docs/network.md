@@ -7,7 +7,7 @@
 
 同一台机器、以及大多数局域网，不配 TURN 也能连。默认 ICE 是本机候选加上 `stun:stun.l.google.com:19302`。
 
-Phase 1 does not load a `.env` file. Export the variables below, or load them yourself. Do not commit real TURN usernames or passwords. `.env.example` only shows empty placeholders.
+Phase 1 does not load a `.env` file. The dev client reads the variables below from the process environment. An installed or portable build reads a JSON file with the same keys; a non-empty environment variable still wins. Paths and the example file are in [docs/download.md](download.md). Do not commit real TURN usernames or passwords. `.env.example` only shows empty placeholders.
 
 ## 信令让别的机器连得上 / Bind signaling so another machine can connect
 
@@ -46,9 +46,23 @@ $env:SIGNALING_URL="ws://203.0.113.10:8787"; npm run dev:desktop
 
 这一期信令没有登录口令。设备码和临时安全连接码就是房间的准入。不要把带账号的 URL 写进仓库；如果以后加信令口令，同样只放环境变量。
 
+## 安装版怎么读这些变量 / Installed app
+
+`npm run dev` 只看环境变量，以及工作目录里的 `xiaoxu.config.json`（这个文件已忽略，不要提交）。
+
+安装包和便携版按这个顺序合并，后面的盖过前面的：
+
+1. 用户目录 `config.json`。Windows 是 `%APPDATA%\小旭连接\config.json`。第一次打开时，旁边会有一份 `config.example.json`。
+2. exe 旁边的 `xiaoxu.config.json`。便携版用这个，配置可以跟 U 盘走。
+3. 环境变量。从终端启动时用。
+
+键名和下面的表一样，值都是字符串。空字符串等于没写。`SIGNALING_URL` 只接受不带账号的 `ws://` 或 `wss://`。日志里的 `[config]` / `[ice]` 只有地址和策略，没有 `TURN_USERNAME` 或 `TURN_CREDENTIAL`。点界面左侧的「小旭」也能看到当前信令地址。
+
+完整的下载和填写步骤在 [docs/download.md](download.md)。
+
 ## 客户端 ICE / Client ICE servers
 
-Electron 主进程读环境变量，经 `getConfig` 交给渲染进程的 `RTCPeerConnection`。变量见 `.env.example`。
+Electron 主进程读环境变量和上面的 JSON，经 `getConfig` 交给渲染进程的 `RTCPeerConnection`。变量见 `.env.example`。
 
 | 变量 | 含义 | 不设时 |
 | --- | --- | --- |

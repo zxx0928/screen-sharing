@@ -61,11 +61,26 @@ export type Win32NativeAddon = {
   probeH264(): H264Probe;
 };
 
+/**
+ * `.node` files cannot stay inside app.asar. electron-builder unpacks them
+ * next to the archive. `__dirname` still points inside `app.asar`.
+ */
+export function unpackedAddonPath(bundledPath: string): string | null {
+  const patterns = [`${path.sep}app.asar${path.sep}`, "/app.asar/", "\\app.asar\\"];
+  for (const pattern of patterns) {
+    if (!bundledPath.includes(pattern)) continue;
+    return bundledPath.replace(pattern, pattern.replace("app.asar", "app.asar.unpacked"));
+  }
+  return null;
+}
+
 export function win32AddonCandidates(moduleDir: string): string[] {
-  return [
-    path.join(moduleDir, ADDON_FILE),
-    path.resolve(moduleDir, "..", "native", "win32", "build", "Release", ADDON_FILE),
-  ];
+  const beside = path.join(moduleDir, ADDON_FILE);
+  const candidates = [beside];
+  const unpacked = unpackedAddonPath(beside);
+  if (unpacked) candidates.push(unpacked);
+  candidates.push(path.resolve(moduleDir, "..", "native", "win32", "build", "Release", ADDON_FILE));
+  return candidates;
 }
 
 export function loadWin32AddonAt(options: {

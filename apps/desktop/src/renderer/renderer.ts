@@ -875,10 +875,11 @@ function presenceText(): string {
 }
 
 function signalingLabel(): string {
-  if (state.signaling === "open") return `信令已连接 ${state.signalingUrl}`;
-  if (state.signaling === "connecting") return "正在连接信令…";
+  const url = state.signalingUrl;
+  if (state.signaling === "open") return url ? `信令已连接 ${url}` : "信令已连接";
+  if (state.signaling === "connecting") return url ? `正在连接信令 ${url}` : "正在连接信令…";
   if (state.signaling === "error") return "桌面配置不可用";
-  return "信令未连接，正在重试…";
+  return url ? `信令未连接 ${url}，正在重试…` : "信令未连接，正在重试…";
 }
 
 async function copyText(text: string, button: HTMLButtonElement, restore: string): Promise<void> {

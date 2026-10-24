@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { WIN32_ADDON_ABI, loadWin32AddonAt, win32AddonCandidates } from "./native-addon";
+import { WIN32_ADDON_ABI, loadWin32AddonAt, unpackedAddonPath, win32AddonCandidates } from "./native-addon";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -64,6 +64,21 @@ test("addon candidates sit next to the bundled main process and the node-gyp out
   const candidates = win32AddonCandidates("/app/dist");
   assert.equal(candidates[0], path.join("/app/dist", "screen_sharing_win32.node"));
   assert.equal(candidates[1], path.resolve("/app/dist", "..", "native", "win32", "build", "Release", "screen_sharing_win32.node"));
+  assert.equal(unpackedAddonPath(candidates[0]), null);
+});
+
+test("a packaged build also looks in app.asar.unpacked", () => {
+  const moduleDir = path.join("/Program Files/XiaoxuConnect/resources", "app.asar", "dist");
+  const candidates = win32AddonCandidates(moduleDir);
+  assert.equal(candidates[0], path.join(moduleDir, "screen_sharing_win32.node"));
+  assert.equal(
+    candidates[1],
+    path.join("/Program Files/XiaoxuConnect/resources", "app.asar.unpacked", "dist", "screen_sharing_win32.node"),
+  );
+  assert.equal(
+    unpackedAddonPath("C:\\XiaoxuConnect\\resources\\app.asar\\dist\\screen_sharing_win32.node"),
+    "C:\\XiaoxuConnect\\resources\\app.asar.unpacked\\dist\\screen_sharing_win32.node",
+  );
 });
 
 test("native sources call DXGI, SendInput, and ProcessInput on a synchronous H.264 MFT", () => {
@@ -79,12 +94,16 @@ test("native sources call DXGI, SendInput, and ProcessInput on a synchronous H.2
   const bundle = fs.readFileSync(path.join(here, "../../scripts/bundle.mjs"), "utf8");
 
   assert.match(sendInput, /SendInput\(/);
+  assert.match(dxgi, /d3d11_4\.h/);
+  assert.match(dxgi, /ID3D11Multithread/);
   assert.match(dxgi, /DuplicateOutput\(/);
   assert.match(dxgi, /AcquireNextFrame\(/);
   assert.match(dxgi, /CreateEncoder\(GUID_ContainerFormatJpeg/);
   assert.match(dxgi, /H264Encoder/);
   assert.ok(dxgi.indexOf("ReleaseFrame()") < dxgi.indexOf("encoder.Encode("));
   assert.match(probe, /MFTEnumEx\(/);
+  assert.match(probe, /MFT_TRANSFORM_CLSID_Attribute/);
+  assert.doesNotMatch(probe, /MF_TRANSFORM_CLSID_Attribute/);
   assert.match(probe, /MFVideoFormat_H264/);
   assert.match(encoder, /ProcessInput\(/);
   assert.match(encoder, /MFVideoFormat_H264/);
