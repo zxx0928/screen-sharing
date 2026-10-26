@@ -1,8 +1,8 @@
 # screen-sharing
 
-屏幕共享。一对一远程桌面骨架，形态接近 ToDesk / 向日葵：被控端展示设备码和可选临时密码，控制端输入设备码发起连接。不是多人会议。客户端界面叫「小旭连接」。
+屏幕共享。一对一远程桌面骨架：被控端展示设备码和可选临时密码，控制端输入设备码发起连接。不是多人会议。客户端界面叫「小旭连接」。
 
-Phase-1 skeleton for a 1:1 remote desktop, in the shape of ToDesk / Sunflower. The controlled host shows a device code and an optional temporary password; the controller types that code to connect. This is not a multi-party meeting.
+Phase-1 skeleton for a 1:1 remote desktop. The controlled host shows a device code and an optional temporary password; the controller types that code to connect. This is not a multi-party meeting.
 
 同一个 Electron 客户端既能当被控端，也能当控制端。Windows 上，主进程用 DXGI Desktop Duplication 采集屏幕，用 `SendInput` 注入键鼠。macOS 不在这次范围内。
 
