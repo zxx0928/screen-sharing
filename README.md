@@ -8,6 +8,10 @@ Phase-1 skeleton for a 1:1 remote desktop, in the shape of ToDesk / Sunflower. T
 
 The same Electron client plays both roles. On Windows the main process captures with DXGI Desktop Duplication and injects keyboard and mouse with `SendInput`. macOS is out of scope.
 
+给产品看的缺口清单：[一期进度与缺口](docs/phase1-status.md)。
+
+Product-facing gap list: [Phase 1 status](docs/phase1-status.md).
+
 ## 技术栈 / Stack
 
 - Electron（Windows 优先，macOS 以后）
